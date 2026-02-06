@@ -10,6 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
+import QRCode from 'qrcode';
 
 import makeWASocket, {
   DisconnectReason,
@@ -52,11 +53,18 @@ async function authenticate(): Promise<void> {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
+      console.clear();
       console.log('Scan this QR code with WhatsApp:\n');
       console.log('  1. Open WhatsApp on your phone');
       console.log('  2. Tap Settings → Linked Devices → Link a Device');
       console.log('  3. Point your camera at the QR code below\n');
+      console.log('QR code also saved to: store/whatsapp-qr.png');
+      console.log('QR code refreshes every 20 seconds - keep scanning until it works!\n');
       qrcode.generate(qr, { small: true });
+
+      // Save QR code as image (fire and forget)
+      const qrPath = path.join(AUTH_DIR, '../whatsapp-qr.png');
+      QRCode.toFile(qrPath, qr, { width: 400 }).catch(() => {});
     }
 
     if (connection === 'close') {

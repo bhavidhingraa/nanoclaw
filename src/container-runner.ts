@@ -129,7 +129,7 @@ function buildVolumeMounts(
   const envFile = path.join(projectRoot, '.env');
   if (fs.existsSync(envFile)) {
     const envContent = fs.readFileSync(envFile, 'utf-8');
-    const allowedVars = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'];
+    const allowedVars = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL'];
     const filteredLines = envContent.split('\n').filter((line) => {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('#')) return false;
@@ -162,8 +162,42 @@ function buildVolumeMounts(
   return mounts;
 }
 
+/**
+ * Parse .env file and return key-value pairs
+ */
+function loadEnvVars(): Record<string, string> {
+  const envFile = path.join(process.cwd(), '.env');
+  const envVars: Record<string, string> = {};
+
+  if (fs.existsSync(envFile)) {
+    const envContent = fs.readFileSync(envFile, 'utf-8');
+    const allowedVars = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL'];
+
+    for (const line of envContent.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      for (const varName of allowedVars) {
+        if (trimmed.startsWith(`${varName}=`)) {
+          const value = trimmed.slice(varName.length + 1);
+          envVars[varName] = value;
+          break;
+        }
+      }
+    }
+  }
+
+  return envVars;
+}
+
 function buildContainerArgs(mounts: VolumeMount[], containerName: string): string[] {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
+
+  // Add environment variables from .env file
+  const envVars = loadEnvVars();
+  for (const [key, value] of Object.entries(envVars)) {
+    args.push('-e', `${key}=${value}`);
+  }
 
   // Apple Container: --mount for readonly, -v for read-write
   for (const mount of mounts) {

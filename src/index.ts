@@ -726,9 +726,19 @@ async function connectWhatsApp(): Promise<void> {
     }
   });
 
+  // Debug: log all events to diagnose missing messages.upsert
+  const originalEmit = sock.ev.emit;
+  sock.ev.emit = function(event, data) {
+    if (event !== 'messages.upsert' && event !== 'connection.update' && event !== 'creds.update') {
+      logger.debug({ event }, 'Baileys event fired');
+    }
+    return originalEmit.call(this, event, data);
+  };
+
   sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('messages.upsert', ({ messages }) => {
+  sock.ev.on('messages.upsert', ({ messages, type }) => {
+    logger.info({ count: messages.length, type, firstMsgJid: messages[0]?.key?.remoteJid }, 'messages.upsert FIRED!');
     for (const msg of messages) {
       if (!msg.message) continue;
       const rawJid = msg.key.remoteJid;
