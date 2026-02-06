@@ -1,0 +1,23 @@
+# Development Workspace
+
+This directory is ready for your development projects.
+
+## Quick Start
+
+1. Clone your repositories:
+   ```bash
+   git clone git@github.com:UnpluggedDevv/frontend.git
+   git clone git@github.com:UnpluggedDevv/backend.git
+   ```
+
+2. See [SETUP.md](./SETUP.md) for detailed instructions.
+
+## Your Projects
+
+Once cloned, your projects will be:
+- `/workspace/project/workspace/frontend/` - Frontend application
+- `/workspace/project/workspace/backend/` - Backend API
+
+---
+
+*Need help? Just ask Alfred!*

@@ -30,6 +30,7 @@ export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(
   process.env.CONTAINER_MAX_OUTPUT_SIZE || '10485760',
   10,
 ); // 10MB default
+export const CONTAINER_MEMORY = process.env.CONTAINER_MEMORY || '2G';
 export const IPC_POLL_INTERVAL = 1000;
 
 function escapeRegex(str: string): string {

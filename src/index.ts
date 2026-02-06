@@ -17,7 +17,6 @@ import {
   POLL_INTERVAL,
   STORE_DIR,
   TIMEZONE,
-  TRIGGER_PATTERN,
 } from './config.js';
 import {
   AvailableGroup,
@@ -177,6 +176,28 @@ function getAvailableGroups(): AvailableGroup[] {
     }));
 }
 
+/**
+ * Build a regex pattern for a group's trigger word
+ * @param trigger - The trigger string (e.g., "@Alfred", "@bhai")
+ * @returns RegExp that matches the trigger at the start of a message (case-insensitive)
+ */
+function buildTriggerPattern(trigger: string): RegExp {
+  // Extract the name from trigger (remove @ if present)
+  const name = trigger.startsWith('@') ? trigger.slice(1) : trigger;
+  // Escape special regex characters
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^@${escaped}\\b`, 'i');
+}
+
+/**
+ * Extract the assistant name from a trigger string
+ * @param trigger - The trigger string (e.g., "@Alfred", "@bhai")
+ * @returns The name without @ prefix
+ */
+function getAssistantNameFromTrigger(trigger: string): string {
+  return trigger.startsWith('@') ? trigger.slice(1) : trigger;
+}
+
 async function processMessage(msg: NewMessage): Promise<void> {
   const group = registeredGroups[msg.chat_jid];
   if (!group) return;
@@ -184,15 +205,20 @@ async function processMessage(msg: NewMessage): Promise<void> {
   const content = msg.content.trim();
   const isMainGroup = group.folder === MAIN_GROUP_FOLDER;
 
-  // Main group responds to all messages; other groups require trigger prefix
-  if (!isMainGroup && !TRIGGER_PATTERN.test(content)) return;
+  // Main group responds to all messages; other groups require their specific trigger prefix
+  if (!isMainGroup) {
+    const triggerPattern = buildTriggerPattern(group.trigger);
+    if (!triggerPattern.test(content)) return;
+  }
 
   // Get all messages since last agent interaction so the session has full context
   const sinceTimestamp = lastAgentTimestamp[msg.chat_jid] || '';
+  // Use the group's assistant name for filtering out assistant messages
+  const groupAssistantName = getAssistantNameFromTrigger(group.trigger);
   const missedMessages = getMessagesSince(
     msg.chat_jid,
     sinceTimestamp,
-    ASSISTANT_NAME,
+    groupAssistantName,
   );
 
   const lines = missedMessages.map((m) => {
@@ -220,7 +246,8 @@ async function processMessage(msg: NewMessage): Promise<void> {
 
   if (response) {
     lastAgentTimestamp[msg.chat_jid] = msg.timestamp;
-    await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}`);
+    const responsePrefix = isMainGroup ? ASSISTANT_NAME : groupAssistantName;
+    await sendMessage(msg.chat_jid, `${responsePrefix}: ${response}`);
   }
 }
 
@@ -773,12 +800,19 @@ async function startMessageLoop(): Promise<void> {
     return;
   }
   messageLoopRunning = true;
-  logger.info(`NanoClaw running (trigger: @${ASSISTANT_NAME})`);
+  const groupList = Object.entries(registeredGroups)
+    .map(([jid, g]) => `${g.name} (@${g.trigger.startsWith('@') ? g.trigger.slice(1) : g.trigger})`)
+    .join(', ');
+  logger.info(`NanoClaw running (${Object.keys(registeredGroups).length} groups: ${groupList})`);
 
   while (true) {
     try {
       const jids = Object.keys(registeredGroups);
-      const { messages } = getNewMessages(jids, lastTimestamp, ASSISTANT_NAME);
+      // Collect all bot prefixes to filter out bot responses from any group
+      const botPrefixes = Object.values(registeredGroups).map(g =>
+        g.trigger.startsWith('@') ? g.trigger.slice(1) : g.trigger
+      );
+      const { messages } = getNewMessages(jids, lastTimestamp, botPrefixes);
 
       if (messages.length > 0)
         logger.info({ count: messages.length }, 'New messages');

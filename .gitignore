@@ -21,3 +21,6 @@ logs/
 .vscode/
 
 agents-sdk-docs
+
+workspace/frontend
+workspace/backend

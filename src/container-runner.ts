@@ -129,7 +129,7 @@ function buildVolumeMounts(
   const envFile = path.join(projectRoot, '.env');
   if (fs.existsSync(envFile)) {
     const envContent = fs.readFileSync(envFile, 'utf-8');
-    const allowedVars = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL'];
+    const allowedVars = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'GH_TOKEN', 'GITHUB_TOKEN'];
     const filteredLines = envContent.split('\n').filter((line) => {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('#')) return false;
@@ -171,7 +171,7 @@ function loadEnvVars(): Record<string, string> {
 
   if (fs.existsSync(envFile)) {
     const envContent = fs.readFileSync(envFile, 'utf-8');
-    const allowedVars = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL'];
+    const allowedVars = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'GH_TOKEN', 'GITHUB_TOKEN'];
 
     for (const line of envContent.split('\n')) {
       const trimmed = line.trim();
@@ -192,6 +192,11 @@ function loadEnvVars(): Record<string, string> {
 
 function buildContainerArgs(mounts: VolumeMount[], containerName: string): string[] {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
+
+  // Set memory limit for container (default: 2GB, can be overridden via CONTAINER_MEMORY env)
+  // Increase for memory-intensive tasks like npm build
+  const memoryLimit = process.env.CONTAINER_MEMORY || '2G';
+  args.push('--memory', memoryLimit);
 
   // Add environment variables from .env file
   const envVars = loadEnvVars();

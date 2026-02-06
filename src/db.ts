@@ -203,25 +203,35 @@ export function storeMessage(
   );
 }
 
+/**
+ * Get new messages for multiple chats, filtering out bot responses
+ * @param jids - Chat JIDs to fetch messages from
+ * @param lastTimestamp - Only fetch messages after this timestamp
+ * @param botPrefixes - Array of bot names to filter out (e.g., ["Alfred", "bhai"])
+ */
 export function getNewMessages(
   jids: string[],
   lastTimestamp: string,
-  botPrefix: string,
+  botPrefixes: string[],
 ): { messages: NewMessage[]; newTimestamp: string } {
   if (jids.length === 0) return { messages: [], newTimestamp: lastTimestamp };
 
   const placeholders = jids.map(() => '?').join(',');
-  // Filter out bot's own messages by checking content prefix (not is_from_me, since user shares the account)
+  // Filter out bot's own messages by checking content prefix for ANY bot name
+  // Build NOT LIKE clauses for each bot prefix
+  const notLikeClauses = botPrefixes.map(() => 'content NOT LIKE ?').join(' AND ');
+
   const sql = `
     SELECT id, chat_jid, sender, sender_name, content, timestamp
     FROM messages
-    WHERE timestamp > ? AND chat_jid IN (${placeholders}) AND content NOT LIKE ?
+    WHERE timestamp > ? AND chat_jid IN (${placeholders}) AND ${notLikeClauses}
     ORDER BY timestamp
   `;
 
+  const botPatterns = botPrefixes.map(p => `${p}:%`);
   const rows = db
     .prepare(sql)
-    .all(lastTimestamp, ...jids, `${botPrefix}:%`) as NewMessage[];
+    .all(lastTimestamp, ...jids, ...botPatterns) as NewMessage[];
 
   let newTimestamp = lastTimestamp;
   for (const row of rows) {
@@ -231,6 +241,12 @@ export function getNewMessages(
   return { messages: rows, newTimestamp };
 }
 
+/**
+ * Get messages for a specific chat since a timestamp, filtering out bot responses
+ * @param chatJid - Chat JID to fetch messages from
+ * @param sinceTimestamp - Only fetch messages after this timestamp
+ * @param botPrefix - Bot name to filter out (e.g., "Alfred")
+ */
 export function getMessagesSince(
   chatJid: string,
   sinceTimestamp: string,

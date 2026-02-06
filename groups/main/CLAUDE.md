@@ -192,3 +192,152 @@ When scheduling tasks for other groups, use the `target_group` parameter:
 - `schedule_task(prompt: "...", schedule_type: "cron", schedule_value: "0 9 * * 1", target_group: "family-chat")`
 
 The task will run in that group's context with access to their files and memory.
+
+---
+
+## Memory Management
+
+The container has limited memory (4GB default). For **memory-intensive tasks** like frontend builds:
+
+### Use Memory-Efficient Commands
+
+```bash
+# Use npm ci instead of npm install (more memory efficient)
+npm ci
+
+# For builds, use Node.js with increased heap if needed
+NODE_OPTIONS="--max-old-space-size=3072" npm run build
+
+# For Next.js projects
+npm run build  # Next.js automatically manages memory
+
+# For React/Create-React-App
+NODE_OPTIONS="--max-old-space-size=2048" npm run build
+```
+
+### If Build Still Fails with OOM
+
+1. Increase `CONTAINER_MEMORY` in `.env` (try `6G` or `8G`)
+2. Restart service: `launchctl kickstart -k gui/$(id -u)/com.nanoclaw`
+3. Try building in stages or use production mode
+
+---
+
+## GitHub Workflow
+
+You have access to `git` and `gh` (GitHub CLI) for GitHub operations.
+
+### IMPORTANT: Always Create Pull Requests
+
+**NEVER push directly to main or protected branches.** Always:
+1. Create a new branch
+2. Make changes
+3. Commit with clear message
+4. Push the branch
+5. Create a pull request
+
+### Standard GitHub Workflow
+
+```bash
+# 1. Clone or navigate to repo
+gh repo clone owner/repo
+cd repo
+
+# OR navigate to existing repo
+cd /workspace/project/existing-repo
+
+# 2. Create a new branch (use descriptive names)
+git checkout -b feat/add-new-feature
+git checkout -b fix/fix-bug-description
+git checkout -b docs/update-readme
+
+# 3. Make changes (edit files, etc.)
+# ... use Read/Edit/Write tools ...
+
+# 4. Stage and commit changes
+git add .
+git commit -m "feat: add new feature
+
+- Implemented X
+- Added tests for Y
+- Fixed Z"
+
+# 5. Push the branch
+git push -u origin HEAD
+
+# 6. Create pull request
+gh pr create --title "Add new feature" --body "## Summary
+- Implemented X
+- Added tests
+
+## Test plan
+- [ ] Manual testing
+- [ ] Unit tests pass"
+```
+
+### GitHub CLI Quick Reference
+
+```bash
+# Clone a repo
+gh repo clone owner/repo
+
+# List pull requests
+gh pr list
+
+# Create PR with current branch as head
+gh pr create --title "Title" --body "Description"
+
+# View PR status
+gh pr status
+
+# Add reviewer to PR
+gh pr edit 123 --add-reviewer username
+
+# Request review from PR
+gh pr review 123
+
+# Merge PR (ONLY if user explicitly asks - NEVER auto-merge)
+gh pr merge 123 --squash --delete-branch
+```
+
+### Repo Access
+
+To work on a GitHub repository that's not in your workspace:
+
+1. **Ask the user** which repository they want to work on
+2. **Get confirmation** before cloning (large repos)
+3. **Clone to `/workspace/`** to keep work isolated:
+   ```bash
+   cd /workspace
+   gh repo clone owner/repo
+   cd repo
+   ```
+
+### Working with Existing Repos
+
+If the project is already mounted at `/workspace/project`, you can directly:
+- Read files: `/workspace/project/src/file.ts`
+- Edit files: Use the Edit tool
+- Commit changes: Use bash commands in `/workspace/project`
+
+### Branch Naming Conventions
+
+Use conventional prefixes:
+- `feat/` - New features
+- `fix/` - Bug fixes
+- `docs/` - Documentation changes
+- `refactor/` - Code refactoring
+- `test/` - Adding or updating tests
+- `chore/` - Maintenance tasks
+
+### Commit Message Format
+
+```
+type(scope): brief description
+
+Detailed explanation if needed.
+
+- Bullet points for multiple changes
+```
+
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
