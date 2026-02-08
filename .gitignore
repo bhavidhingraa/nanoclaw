@@ -22,5 +22,4 @@ logs/
 
 agents-sdk-docs
 
-workspace/frontend
-workspace/backend
+workspace
