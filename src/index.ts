@@ -17,6 +17,11 @@ import {
   POLL_INTERVAL,
   STORE_DIR,
   TIMEZONE,
+  PROJECT_ROOT,
+  SUGAR_PROJECTS_FILE,
+  getSugarProjects,
+  getSugarProject,
+  getDefaultSugarProject,
 } from './config.js';
 import {
   AvailableGroup,
@@ -42,6 +47,14 @@ import { NewMessage, RegisteredGroup, Session } from './types.js';
 import { loadJson, saveJson } from './utils.js';
 import { logger } from './logger.js';
 
+// Sugar path constant
+const SUGAR_PATH = '/Users/neetidhingra/Github/bhavidhingraa/sugar';
+
+// Helper to build sugar command with proper PYTHONPATH
+function sugarCmd(args: string): string {
+  return `PYTHONPATH=${SUGAR_PATH}:$PYTHONPATH python -m sugar.main ${args}`;
+}
+
 const GROUP_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 let sock: WASocket;
@@ -55,6 +68,8 @@ let lidToPhoneMap: Record<string, string> = {};
 let messageLoopRunning = false;
 let ipcWatcherRunning = false;
 let groupSyncTimerStarted = false;
+// Track running Sugar processes by project name
+const runningSugarProcesses: Record<string, number> = {};
 
 /**
  * Translate a JID from LID format to phone format if we have a mapping.
@@ -460,6 +475,25 @@ async function processTaskIpc(
     folder?: string;
     trigger?: string;
     containerConfig?: RegisteredGroup['containerConfig'];
+    // For Sugar integration
+    task?: string;
+    taskType?: string;
+    priority?: number;
+    project?: string;
+    projectName?: string;
+    status?: string;
+    limit?: number;
+    dryRun?: boolean;
+    continuous?: boolean;
+    projectPath?: string;
+    // For GitHub integration
+    repo?: string;
+    state?: string;
+    issueNumber?: number;
+    branch?: string;
+    title?: string;
+    body?: string;
+    default?: boolean;
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -671,8 +705,549 @@ async function processTaskIpc(
       }
       break;
 
+    // ===== Sugar Integration Handlers =====
+
+    case 'sugar_add': {
+      if (!data.task) {
+        logger.warn({ data }, 'Invalid sugar_add request - missing task');
+        break;
+      }
+
+      // Get the target project (use provided name or default)
+      const projectName = data.project || (data.projectName as string);
+      const project = projectName ? getSugarProject(projectName) : getDefaultSugarProject();
+
+      if (!project) {
+        const errorMsg = `Sugar project not found. Configure projects in ${SUGAR_PROJECTS_FILE}`;
+        logger.warn({ projectName }, errorMsg);
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: ${errorMsg}`);
+        }
+        break;
+      }
+
+      const sugarProjectDir = path.join(project.path, '.sugar');
+      if (!fs.existsSync(sugarProjectDir)) {
+        const errorMsg = `Sugar not initialized in ${project.name}. Run: cd ${project.path} && sugar init`;
+        logger.warn({ sugarProjectDir }, errorMsg);
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: ${errorMsg}`);
+        }
+        break;
+      }
+
+      try {
+        // Escape task string for shell: replace newlines and special chars
+        const safeTask = data.task
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, '\\n')
+          .replace(/\$/g, '\\$')
+          .replace(/`/g, '\\`');
+
+        // Map task types to valid Sugar types
+        const validTypes = ['bug_fix', 'feature', 'test', 'refactor', 'documentation'];
+        const typeMapping: Record<string, string> = {
+          'chore': 'feature',
+          'bug': 'bug_fix',
+          'fix': 'bug_fix',
+          'enhancement': 'feature',
+          'docs': 'documentation',
+          'doc': 'documentation',
+        };
+        const safeType = data.taskType ? (typeMapping[data.taskType] || data.taskType) : null;
+
+        let cmd = `cd "${project.path}" && ${sugarCmd(`add "${safeTask}"`)}`;
+        if (safeType && validTypes.includes(safeType)) cmd += ` --type ${safeType}`;
+        if (data.priority) cmd += ` --priority ${data.priority}`;
+
+        const result = execSyncCmd(cmd, { timeout: 30000 });
+        logger.info({ task: data.task, project: project.name, stdout: result.stdout, stderr: result.stderr }, 'Sugar task added via IPC');
+
+        if (data.chatJid) {
+          const response = result.stdout.trim() || `Task added to ${project.name}: "${data.task.substring(0, 50)}..."`;
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: ${response}`);
+        }
+      } catch (err) {
+        logger.error({ err, task: data.task, project: project.name }, 'Sugar add failed');
+        if (data.chatJid) {
+          await sendMessage(
+            data.chatJid,
+            `${ASSISTANT_NAME}: Failed to add task - ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      break;
+    }
+
+    case 'sugar_list': {
+      // Get the target project (use provided name or default)
+      const projectName = data.project || (data.projectName as string);
+      const project = projectName ? getSugarProject(projectName) : getDefaultSugarProject();
+
+      if (!project) {
+        const errorMsg = `Sugar project not found. Configure projects in ${SUGAR_PROJECTS_FILE}`;
+        logger.warn({ projectName }, errorMsg);
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: ${errorMsg}`);
+        }
+        break;
+      }
+
+      const sugarProjectDir = path.join(project.path, '.sugar');
+      if (!fs.existsSync(sugarProjectDir)) {
+        const errorMsg = `Sugar not initialized in ${project.name}. Run: cd ${project.path} && sugar init`;
+        logger.warn({ sugarProjectDir }, errorMsg);
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: ${errorMsg}`);
+        }
+        break;
+      }
+
+      try {
+        let cmd = `cd "${project.path}" && ${sugarCmd(`list --status ${data.status || 'pending'} --json`)}`;
+        if (data.limit) cmd += ` --limit ${data.limit}`;
+
+        const { stdout } = execSyncCmd(cmd, { timeout: 30000 });
+        const tasks = JSON.parse(stdout);
+
+        if (data.chatJid) {
+          if (tasks.length === 0) {
+            await sendMessage(data.chatJid, `${ASSISTANT_NAME}: No ${data.status || 'pending'} tasks found in ${project.name}.`);
+          } else {
+            const formatted = tasks.map((t: any) =>
+              `- [${t.id}] ${t.title} (priority: ${t.priority}, type: ${t.type})`
+            ).join('\n');
+            await sendMessage(data.chatJid, `${ASSISTANT_NAME}: ${project.name} tasks (${tasks.length}):\n${formatted}`);
+          }
+        }
+      } catch (err) {
+        logger.error({ err, project: project.name }, 'Sugar list failed');
+        if (data.chatJid) {
+          await sendMessage(
+            data.chatJid,
+            `${ASSISTANT_NAME}: Failed to list tasks - ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      break;
+    }
+
+    case 'sugar_status': {
+      // Get the target project (use provided name or default)
+      const projectName = data.project || (data.projectName as string);
+      const project = projectName ? getSugarProject(projectName) : getDefaultSugarProject();
+
+      if (!project) {
+        const errorMsg = `Sugar project not found. Configure projects in ${SUGAR_PROJECTS_FILE}`;
+        logger.warn({ projectName }, errorMsg);
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: ${errorMsg}`);
+        }
+        break;
+      }
+
+      const sugarProjectDir = path.join(project.path, '.sugar');
+      if (!fs.existsSync(sugarProjectDir)) {
+        const errorMsg = `Sugar not initialized in ${project.name}. Run: cd ${project.path} && sugar init`;
+        logger.warn({ sugarProjectDir }, errorMsg);
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: ${errorMsg}`);
+        }
+        break;
+      }
+
+      try {
+        const { stdout } = execSyncCmd(`cd "${project.path}" && ${sugarCmd('status')}`, { timeout: 30000 });
+
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME} (${project.name}):\n${stdout}`);
+        }
+      } catch (err) {
+        logger.error({ err, project: project.name }, 'Sugar status failed');
+        if (data.chatJid) {
+          await sendMessage(
+            data.chatJid,
+            `${ASSISTANT_NAME}: Failed to get status - ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      break;
+    }
+
+    case 'sugar_run': {
+      // Get the target project (use provided name or default)
+      const projectName = data.project || (data.projectName as string);
+      const project = projectName ? getSugarProject(projectName) : getDefaultSugarProject();
+
+      if (!project) {
+        const errorMsg = `Sugar project not found. Configure projects in ${SUGAR_PROJECTS_FILE}`;
+        logger.warn({ projectName }, errorMsg);
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: ${errorMsg}`);
+        }
+        break;
+      }
+
+      const sugarProjectDir = path.join(project.path, '.sugar');
+      if (!fs.existsSync(sugarProjectDir)) {
+        const errorMsg = `Sugar not initialized in ${project.name}. Run: cd ${project.path} && sugar init`;
+        logger.warn({ sugarProjectDir }, errorMsg);
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: ${errorMsg}`);
+        }
+        break;
+      }
+
+      // Check if already running in continuous mode
+      if (runningSugarProcesses[project.name]) {
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: Sugar is already running for ${project.name}. Use sugar_stop() first.`);
+        }
+        break;
+      }
+
+      const dryRun = data.dryRun ? '--dry-run ' : '';
+      const continuous = data.continuous ? '' : '--once ';
+      const sugarPath = '/Users/neetidhingra/Github/bhavidhingraa/sugar';
+      const cmd = `cd "${project.path}" && PYTHONPATH=${sugarPath}:$PYTHONPATH python -m sugar.main run ${dryRun}${continuous}`;
+
+      const homeDir = process.env.HOME || '/Users/neetidhingra';
+      const envPath = `/opt/homebrew/bin:/opt/homebrew/sbin:${homeDir}/.pyenv/shims:${homeDir}/.pyenv/bin:${process.env.PATH}`;
+
+      logger.info({ dryRun: data.dryRun, continuous: !!data.continuous, project: project.name }, 'Starting Sugar run via IPC');
+
+      const sugarProcess = exec(cmd, { env: { ...process.env, PATH: envPath } }, (error: any, stdout: string, stderr: string) => {
+        // Clear PID tracking when process exits
+        delete runningSugarProcesses[project.name];
+
+        if (error) {
+          logger.error({ error, stderr, project: project.name }, 'Sugar run failed');
+        } else {
+          logger.info({ stdout, project: project.name }, 'Sugar run completed');
+        }
+      });
+
+      // Track PID for continuous mode so we can stop it later
+      if (data.continuous) {
+        runningSugarProcesses[project.name] = sugarProcess.pid || 0;
+        logger.info({ pid: sugarProcess.pid, project: project.name }, 'Sugar continuous mode started');
+      }
+
+      if (data.chatJid) {
+        const mode = data.continuous ? 'continuous mode' : 'once';
+        await sendMessage(data.chatJid, `${ASSISTANT_NAME}: Sugar started for ${project.name} (${mode})${data.dryRun ? ' (dry-run)' : ''}.${data.continuous ? ' Use sugar_stop() to stop it.' : ''}`);
+      }
+      break;
+    }
+
+    case 'sugar_stop': {
+      const projectName = data.project;
+      const project = projectName ? getSugarProject(projectName) : getDefaultSugarProject();
+
+      if (!project) {
+        const errorMsg = `Sugar project not found. Configure projects in ${SUGAR_PROJECTS_FILE}`;
+        logger.warn({ projectName }, errorMsg);
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: ${errorMsg}`);
+        }
+        break;
+      }
+
+      const pid = runningSugarProcesses[project.name];
+      if (!pid) {
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: No running Sugar process found for ${project.name}.`);
+        }
+        break;
+      }
+
+      try {
+        process.kill(pid, 'SIGTERM');
+        delete runningSugarProcesses[project.name];
+        logger.info({ pid, project: project.name }, 'Sugar process stopped via IPC');
+
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: Sugar stopped for ${project.name}.`);
+        }
+      } catch (err) {
+        logger.error({ err, pid, project: project.name }, 'Failed to stop Sugar process');
+        // Process might have already died, clear tracking
+        delete runningSugarProcesses[project.name];
+
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: Sugar process for ${project.name} was not running (may have already exited).`);
+        }
+      }
+      break;
+    }
+
+    case 'sugar_list_projects': {
+      const projects = getSugarProjects();
+      const projectList = Object.entries(projects).map(([key, p]) =>
+        `- ${p.name}${p.default ? ' (default)' : ''}: ${p.path}${p.repo ? ` [${p.repo}]` : ''}`
+      ).join('\n');
+
+      if (data.chatJid) {
+        if (Object.keys(projects).length === 0) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: No Sugar projects configured. Add projects to ${SUGAR_PROJECTS_FILE}`);
+        } else {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: Configured projects:\n${projectList}`);
+        }
+      }
+      break;
+    }
+
+    case 'sugar_add_project': {
+      if (!isMain) {
+        logger.warn({ sourceGroup }, 'Unauthorized sugar_add_project attempt blocked');
+        break;
+      }
+
+      if (!data.name || !data.projectPath) {
+        logger.warn({ data }, 'Invalid sugar_add_project request - missing name or path');
+        break;
+      }
+
+      const projects = getSugarProjects();
+      projects[data.name] = {
+        name: data.name,
+        path: data.projectPath,
+        repo: data.repo,
+        default: data.default || Object.keys(projects).length === 0,
+      };
+
+      saveJson(SUGAR_PROJECTS_FILE, projects);
+      logger.info({ name: data.name, path: data.projectPath }, 'Sugar project added via IPC');
+
+      if (data.chatJid) {
+        await sendMessage(data.chatJid, `${ASSISTANT_NAME}: Added project "${data.name}" at ${data.projectPath}`);
+      }
+      break;
+    }
+
+    case 'sugar_init': {
+      const projectName = data.project;
+      const project = projectName ? getSugarProject(projectName) : getDefaultSugarProject();
+
+      if (!project) {
+        const errorMsg = `Sugar project not found. Configure projects in ${SUGAR_PROJECTS_FILE}`;
+        logger.warn({ projectName }, errorMsg);
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: ${errorMsg}`);
+        }
+        break;
+      }
+
+      const sugarProjectDir = path.join(project.path, '.sugar');
+      if (fs.existsSync(sugarProjectDir)) {
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: Sugar already initialized in ${project.name}`);
+        }
+        break;
+      }
+
+      try {
+        const { stdout } = execSyncCmd(`cd "${project.path}" && ${sugarCmd('init')}`, { timeout: 30000 });
+        logger.info({ project: project.name }, 'Sugar initialized via IPC');
+
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: Sugar initialized in ${project.name}!`);
+        }
+      } catch (err) {
+        logger.error({ err, project: project.name }, 'Sugar init failed');
+        if (data.chatJid) {
+          await sendMessage(
+            data.chatJid,
+            `${ASSISTANT_NAME}: Failed to initialize Sugar - ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      break;
+    }
+
+    // ===== GitHub Integration Handlers =====
+
+    case 'github_list_issues': {
+      const repo = data.repo;
+      if (!repo) {
+        logger.warn({ data }, 'Invalid github_list_issues request - missing repo');
+        break;
+      }
+
+      try {
+        let cmd = `gh issue list --repo ${repo} --json number,title,state,labels`;
+        if (data.state) cmd += ` --state ${data.state}`;
+        if (data.limit) cmd += ` -L ${data.limit}`;
+
+        const { stdout } = execSyncCmd(cmd, { timeout: 30000 });
+        const issues = JSON.parse(stdout);
+
+        if (data.chatJid) {
+          if (issues.length === 0) {
+            await sendMessage(data.chatJid, `${ASSISTANT_NAME}: No issues found in ${repo}.`);
+          } else {
+            const formatted = issues.map((i: any) =>
+              `- #${i.number}: ${i.title} [${i.state}]${i.labels?.length ? ` (${i.labels.map((l: any) => l.name).join(', ')})` : ''}`
+            ).join('\n');
+            await sendMessage(data.chatJid, `${ASSISTANT_NAME}: Issues in ${repo}:\n${formatted}`);
+          }
+        }
+      } catch (err) {
+        logger.error({ err, repo }, 'GitHub list issues failed');
+        if (data.chatJid) {
+          await sendMessage(
+            data.chatJid,
+            `${ASSISTANT_NAME}: Failed to list issues - ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      break;
+    }
+
+    case 'github_create_task_from_issue': {
+      const { repo, issueNumber } = data;
+      if (!repo || !issueNumber) {
+        logger.warn({ data }, 'Invalid github_create_task_from_issue request - missing repo or issueNumber');
+        break;
+      }
+
+      try {
+        // Get issue details
+        const issueCmd = `gh issue view ${issueNumber} --repo ${repo} --json title,body,labels,number`;
+        const { stdout } = execSyncCmd(issueCmd, { timeout: 30000 });
+        const issue = JSON.parse(stdout);
+
+        // Create sugar task from issue (escape title for shell)
+        const taskTitle = `GitHub #${issue.number}: ${issue.title.replace(/"/g, '\\"').replace(/\n/g, '\\n')}`;
+        const taskType = issue.labels?.some((l: any) => l.name === 'bug') ? 'bug_fix' : 'feature';
+        const priorityFlag = issue.labels?.some((l: any) => l.name === 'urgent') ? ' --priority 1' : '';
+
+        const result = execSyncCmd(sugarCmd(`add "${taskTitle}" --type ${taskType}${priorityFlag}`), { timeout: 30000 });
+
+        logger.info({ repo, issueNumber, stdout: result.stdout, stderr: result.stderr }, 'Created Sugar task from GitHub issue');
+
+        if (data.chatJid) {
+          await sendMessage(
+            data.chatJid,
+            `${ASSISTANT_NAME}: Created task from issue #${issueNumber}: "${issue.title}"`,
+          );
+        }
+      } catch (err) {
+        logger.error({ err, repo, issueNumber }, 'Failed to create task from GitHub issue');
+        if (data.chatJid) {
+          await sendMessage(
+            data.chatJid,
+            `${ASSISTANT_NAME}: Failed to create task - ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      break;
+    }
+
+    case 'github_create_pr': {
+      const { repo, branch, title, body } = data;
+      if (!repo || !branch) {
+        logger.warn({ data }, 'Invalid github_create_pr request - missing repo or branch');
+        break;
+      }
+
+      try {
+        let cmd = `gh pr create --repo ${repo} --base main --head ${branch}`;
+        if (title) cmd += ` --title "${title.replace(/"/g, '\\"')}"`;
+        if (body) cmd += ` --body "${body.replace(/"/g, '\\"')}"`;
+        else cmd += ` --fill`; // Auto-fill from commits
+
+        const { stdout } = execSyncCmd(cmd, { timeout: 30000 });
+
+        logger.info({ repo, branch }, 'Created PR via IPC');
+
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: PR created:\n${stdout}`);
+        }
+      } catch (err) {
+        logger.error({ err, repo, branch }, 'Failed to create PR');
+        if (data.chatJid) {
+          await sendMessage(
+            data.chatJid,
+            `${ASSISTANT_NAME}: Failed to create PR - ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      break;
+    }
+
+    case 'github_pr_status': {
+      const repo = data.repo;
+      if (!repo) {
+        logger.warn({ data }, 'Invalid github_pr_status request - missing repo');
+        break;
+      }
+
+      try {
+        const cmd = `gh pr list --repo ${repo} --json number,title,state,headRefName,url --limit 10`;
+        const { stdout } = execSyncCmd(cmd, { timeout: 30000 });
+        const prs = JSON.parse(stdout);
+
+        if (data.chatJid) {
+          if (prs.length === 0) {
+            await sendMessage(data.chatJid, `${ASSISTANT_NAME}: No PRs found in ${repo}.`);
+          } else {
+            const formatted = prs.map((p: any) =>
+              `- #${p.number}: ${p.title} [${p.state}] from ${p.headRefName}\n  ${p.url}`
+            ).join('\n');
+            await sendMessage(data.chatJid, `${ASSISTANT_NAME}: PRs in ${repo}:\n${formatted}`);
+          }
+        }
+      } catch (err) {
+        logger.error({ err, repo }, 'GitHub PR status failed');
+        if (data.chatJid) {
+          await sendMessage(
+            data.chatJid,
+            `${ASSISTANT_NAME}: Failed to get PR status - ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      break;
+    }
+
     default:
       logger.warn({ type: data.type }, 'Unknown IPC task type');
+  }
+}
+
+/**
+ * Execute a command synchronously and return stdout.
+ * Wrapper around execSync for cleaner error handling.
+ */
+function execSyncCmd(command: string, options: { timeout?: number } = {}): { stdout: string; stderr: string } {
+  try {
+    const homeDir = process.env.HOME || '/Users/neetidhingra';
+    const envPath = `/opt/homebrew/bin:/opt/homebrew/sbin:${homeDir}/.pyenv/shims:${homeDir}/.pyenv/bin:${process.env.PATH}`;
+    const sugarPath = '/Users/neetidhingra/Github/bhavidhingraa/sugar';
+    const pythonPath = `${sugarPath}:${process.env.PYTHONPATH || ''}`;
+
+    // Capture both stdout and stderr by redirecting stderr to a temp file
+    const tmpFile = `/tmp/sugar-cmd-${Date.now()}.log`;
+    const cmdWithStderr = `${command} 2>${tmpFile}`;
+
+    const stdout = execSync(cmdWithStderr, {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: options.timeout || 30000,
+      env: { ...process.env, PATH: envPath, PYTHONPATH: pythonPath },
+    });
+
+    let stderr = '';
+    try {
+      stderr = fs.readFileSync(tmpFile, 'utf-8');
+      fs.unlinkSync(tmpFile);
+    } catch {
+      // File might not exist if no stderr output
+    }
+
+    return { stdout: stdout.trim(), stderr: stderr.trim() };
+  } catch (err: any) {
+    return { stdout: '', stderr: err.stderr?.toString() || err.message || String(err) };
   }
 }
 

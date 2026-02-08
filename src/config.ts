@@ -1,11 +1,12 @@
 import path from 'path';
+import fs from 'fs';
 
 export const ASSISTANT_NAME = process.env.ASSISTANT_NAME || 'Alfred';
 export const POLL_INTERVAL = 2000;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 
 // Absolute paths needed for container mounts
-const PROJECT_ROOT = process.cwd();
+export const PROJECT_ROOT = process.cwd();
 const HOME_DIR = process.env.HOME || '/Users/user';
 
 // Mount security: allowlist stored OUTSIDE project root, never mounted into containers
@@ -19,6 +20,48 @@ export const STORE_DIR = path.resolve(PROJECT_ROOT, 'store');
 export const GROUPS_DIR = path.resolve(PROJECT_ROOT, 'groups');
 export const DATA_DIR = path.resolve(PROJECT_ROOT, 'data');
 export const MAIN_GROUP_FOLDER = 'main';
+
+// Sugar projects configuration
+export const SUGAR_PROJECTS_FILE = path.join(DATA_DIR, 'sugar-projects.json');
+
+export interface SugarProject {
+  name: string;
+  path: string;
+  repo?: string; // GitHub repo in "owner/repo" format
+  default?: boolean;
+}
+
+/**
+ * Get all configured Sugar projects
+ */
+export function getSugarProjects(): Record<string, SugarProject> {
+  try {
+    if (fs.existsSync(SUGAR_PROJECTS_FILE)) {
+      const data = fs.readFileSync(SUGAR_PROJECTS_FILE, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    // Return empty object on error
+  }
+  return {};
+}
+
+/**
+ * Get a specific Sugar project by name
+ */
+export function getSugarProject(name: string): SugarProject | undefined {
+  const projects = getSugarProjects();
+  return projects[name];
+}
+
+/**
+ * Get the default Sugar project, or the first one if none marked as default
+ */
+export function getDefaultSugarProject(): SugarProject | undefined {
+  const projects = getSugarProjects();
+  const defaultProject = Object.values(projects).find(p => p.default);
+  return defaultProject || Object.values(projects)[0];
+}
 
 export const CONTAINER_IMAGE =
   process.env.CONTAINER_IMAGE || 'nanoclaw-agent:latest';

@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Skill(setup)"
+      "Skill(setup)",
+      "Bash(npm run build:*)",
+      "Bash(./container/build.sh:*)",
+      "Bash(gh pr list:*)",
+      "Bash(python3:*)"
     ]
   }
 }

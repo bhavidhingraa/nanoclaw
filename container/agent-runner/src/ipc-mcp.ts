@@ -150,7 +150,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
       tool(
         'list_tasks',
         'List all scheduled tasks. From main: shows all tasks. From other groups: shows only that group\'s tasks.',
-        {},
+        {} as Record<string, never>,
         async () => {
           const tasksFile = path.join(IPC_DIR, 'current_tasks.json');
 
@@ -312,6 +312,420 @@ Use available_groups.json to find the JID for a group. The folder name should be
             content: [{
               type: 'text',
               text: `Group "${args.name}" registered. It will start receiving messages immediately.`
+            }]
+          };
+        }
+      ),
+
+      // ===== Sugar Integration Tools =====
+
+      tool(
+        'sugar_add',
+        `Add a task to Sugar queue. Sugar is an autonomous AI development system that works through tasks continuously.
+
+Basic usage: sugar_add("Fix the authentication bug")
+
+Task types: bug_fix, feature, test, refactor, documentation, chore
+Priority: 1 (urgent) to 5 (minimal), default is 3
+
+Examples:
+- sugar_add("Fix memory leak in cache", { type: "bug_fix", priority: 1 })
+- sugar_add("Add user settings page", { type: "feature", priority: 2, project: "frontend" })`,
+        {
+          task: z.string().describe('The task description to add to Sugar'),
+          type: z.enum(['bug_fix', 'feature', 'test', 'refactor', 'documentation', 'chore']).optional().describe('Task type'),
+          priority: z.number().min(1).max(5).optional().describe('Priority (1=urgent, 5=minimal)'),
+          urgent: z.boolean().optional().describe('Mark as urgent (priority 1)'),
+          project: z.string().optional().describe('Project name (uses default if not specified)')
+        },
+        async (args) => {
+          const data = {
+            type: 'sugar_add',
+            task: args.task,
+            taskType: args.type,
+            priority: args.urgent ? 1 : args.priority,
+            project: args.project,
+            groupFolder,
+            chatJid,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Task added to Sugar queue: "${args.task}"${args.type ? ` (${args.type})` : ''}${args.project ? ` [project: ${args.project}]` : ''}`
+            }]
+          };
+        }
+      ),
+
+      tool(
+        'sugar_list',
+        `List tasks in Sugar queue with optional filtering.
+
+Examples:
+- sugar_list() - all pending tasks in default project
+- sugar_list({ status: "pending", project: "frontend" }) - only pending tasks in frontend project
+- sugar_list({ status: "completed" }) - only completed tasks
+- sugar_list({ status: "active" }) - currently running tasks`,
+        {
+          status: z.enum(['pending', 'active', 'completed', 'failed', 'all']).optional().describe('Filter by status'),
+          limit: z.number().optional().describe('Maximum number of tasks to show'),
+          project: z.string().optional().describe('Project name (uses default if not specified)')
+        },
+        async (args) => {
+          const data = {
+            type: 'sugar_list',
+            status: args.status || 'pending',
+            limit: args.limit,
+            project: args.project,
+            groupFolder,
+            chatJid,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Fetching Sugar task list${args.project ? ` for ${args.project}` : ''}...`
+            }]
+          };
+        }
+      ),
+
+      tool(
+        'sugar_status',
+        `Get Sugar system status and queue statistics.
+
+Shows:
+- Total tasks in queue
+- Task counts by status
+- Currently active task
+- Recent activity
+
+Example: sugar_status({ project: "frontend" })`,
+        {
+          project: z.string().optional().describe('Project name (uses default if not specified)')
+        },
+        async (args) => {
+          const data = {
+            type: 'sugar_status',
+            project: args.project,
+            groupFolder,
+            chatJid,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Fetching Sugar status${args.project ? ` for ${args.project}` : ''}...`
+            }]
+          };
+        }
+      ),
+
+      tool(
+        'sugar_run',
+        `Start Sugar autonomous execution. Sugar will work through the task queue.
+
+Options:
+- continuous: Run continuously (auto-discovers GitHub issues, processes tasks repeatedly)
+- once: Run once through the queue and exit (default, safer)
+- dry_run: Safe mode without making actual changes
+
+Examples:
+- sugar_run({ project: "frontend" }) - Run once
+- sugar_run({ project: "frontend", continuous: true }) - Run continuously until stopped`,
+        {
+          project: z.string().optional().describe('Project name (uses default if not specified)'),
+          dry_run: z.boolean().optional().describe('Run in dry-run mode (safe, no actual changes)'),
+          continuous: z.boolean().optional().describe('Run continuously until stopped (auto-discovers issues, processes tasks repeatedly)')
+        },
+        async (args) => {
+          const data = {
+            type: 'sugar_run',
+            project: args.project,
+            dryRun: args.dry_run || false,
+            continuous: args.continuous || false,
+            groupFolder,
+            chatJid,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          const mode = args.continuous ? 'continuous mode' : 'once';
+          return {
+            content: [{
+              type: 'text',
+              text: `Starting Sugar for ${args.project || 'default'} (${mode})${args.dry_run ? ' (dry-run)' : ''}...`
+            }]
+          };
+        }
+      ),
+
+      tool(
+        'sugar_stop',
+        `Stop a running Sugar process.
+
+Example: sugar_stop({ project: "frontend" })`,
+        {
+          project: z.string().optional().describe('Project name to stop Sugar for (uses default if not specified)')
+        },
+        async (args) => {
+          const data = {
+            type: 'sugar_stop',
+            project: args.project,
+            groupFolder,
+            chatJid,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Stopping Sugar for ${args.project || 'default'}...`
+            }]
+          };
+        }
+      ),
+
+      tool(
+        'sugar_list_projects',
+        `List all configured Sugar projects.
+
+Shows project names, paths, and which is the default.
+
+Main group only - used to manage which projects Sugar works with.`,
+        {} as Record<string, never>,
+        async () => {
+          const data = {
+            type: 'sugar_list_projects',
+            groupFolder,
+            chatJid,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Fetching configured Sugar projects...`
+            }]
+          };
+        }
+      ),
+
+      tool(
+        'sugar_add_project',
+        `Add a new Sugar project configuration.
+
+Main group only - configures a project for Sugar to work with.
+
+Example: sugar_add_project({ name: "frontend", path: "/path/to/frontend", repo: "owner/repo", default: true })`,
+        {
+          name: z.string().describe('Project name (e.g., "frontend", "backend")'),
+          path: z.string().describe('Absolute path to the project directory'),
+          repo: z.string().optional().describe('GitHub repo in "owner/repo" format (optional)'),
+          default: z.boolean().optional().describe('Set as default project (first project is auto-default)')
+        },
+        async (args) => {
+          const data = {
+            type: 'sugar_add_project',
+            name: args.name,
+            projectPath: args.path,
+            repo: args.repo,
+            default: args.default,
+            groupFolder,
+            chatJid,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Adding project "${args.name}"...`
+            }]
+          };
+        }
+      ),
+
+      tool(
+        'sugar_init',
+        `Initialize Sugar in a project directory.
+
+Run this once per project before adding tasks.
+
+Example: sugar_init({ project: "backend" })`,
+        {
+          project: z.string().describe('Project name to initialize Sugar in')
+        },
+        async (args) => {
+          const data = {
+            type: 'sugar_init',
+            project: args.project,
+            groupFolder,
+            chatJid,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Initializing Sugar in ${args.project}...`
+            }]
+          };
+        }
+      ),
+
+      // ===== GitHub Integration Tools =====
+
+      tool(
+        'github_list_issues',
+        `List GitHub issues for a repository.
+
+Examples:
+- github_list_issues({ repo: "owner/repo" })
+- github_list_issues({ repo: "owner/repo", state: "open", limit: 10 })
+
+Requires: GitHub CLI (gh) installed and authenticated.`,
+        {
+          repo: z.string().describe('Repository in "owner/repo" format'),
+          state: z.enum(['open', 'closed', 'all']).optional().describe('Filter by issue state'),
+          limit: z.number().optional().describe('Maximum number of issues to return')
+        },
+        async (args) => {
+          const data = {
+            type: 'github_list_issues',
+            repo: args.repo,
+            state: args.state,
+            limit: args.limit,
+            groupFolder,
+            chatJid,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Fetching issues from ${args.repo}...`
+            }]
+          };
+        }
+      ),
+
+      tool(
+        'github_create_task_from_issue',
+        `Create a Sugar task from a GitHub issue.
+
+This will:
+1. Fetch the issue details from GitHub
+2. Create a Sugar task with the issue title and content
+3. Map issue labels to task type (bug → bug_fix, etc.)
+
+Example: github_create_task_from_issue({ repo: "owner/repo", issue_number: 42 })`,
+        {
+          repo: z.string().describe('Repository in "owner/repo" format'),
+          issue_number: z.number().describe('GitHub issue number')
+        },
+        async (args) => {
+          const data = {
+            type: 'github_create_task_from_issue',
+            repo: args.repo,
+            issueNumber: args.issue_number,
+            groupFolder,
+            chatJid,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Creating task from issue #${args.issue_number}...`
+            }]
+          };
+        }
+      ),
+
+      tool(
+        'github_create_pr',
+        `Create a pull request from the current branch.
+
+Example:
+- github_create_pr({ repo: "owner/repo", branch: "feature-branch" })
+- github_create_pr({ repo: "owner/repo", branch: "feature-branch", title: "My PR", body: "Description" })
+
+If title/body not provided, will auto-fill from commits.`,
+        {
+          repo: z.string().describe('Repository in "owner/repo" format'),
+          branch: z.string().describe('Branch name to create PR from'),
+          title: z.string().optional().describe('PR title (optional, auto-filled from commits if not provided)'),
+          body: z.string().optional().describe('PR body/description (optional)')
+        },
+        async (args) => {
+          const data = {
+            type: 'github_create_pr',
+            repo: args.repo,
+            branch: args.branch,
+            title: args.title,
+            body: args.body,
+            groupFolder,
+            chatJid,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Creating PR for branch ${args.branch}...`
+            }]
+          };
+        }
+      ),
+
+      tool(
+        'github_pr_status',
+        `List pull requests for a repository.
+
+Example: github_pr_status({ repo: "owner/repo" })`,
+        {
+          repo: z.string().describe('Repository in "owner/repo" format')
+        },
+        async (args) => {
+          const data = {
+            type: 'github_pr_status',
+            repo: args.repo,
+            groupFolder,
+            chatJid,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Fetching PR status for ${args.repo}...`
             }]
           };
         }
