@@ -5,7 +5,8 @@
       "Bash(npm run build:*)",
       "Bash(./container/build.sh:*)",
       "Bash(gh pr list:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(ls:*)"
     ]
   }
 }

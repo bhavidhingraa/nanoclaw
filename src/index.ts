@@ -318,13 +318,14 @@ async function runAgent(
         { group: group.name, error: output.error },
         'Container agent error',
       );
-      return null;
+      return `Error: ${output.error}`;
     }
 
     return output.result;
   } catch (err) {
     logger.error({ group: group.name, err }, 'Agent error');
-    return null;
+    const errMsg = err instanceof Error ? err.message : String(err);
+    return `Error: ${errMsg}`;
   }
 }
 
