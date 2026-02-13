@@ -73,13 +73,13 @@ fi
 
 # Cleanup: keep only last 10 backups
 log "Cleaning up old backups (keeping last 10)..."
-find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'kb-*.sql' -print0 | sort -rn | tail -n +11 | xargs -r rm -v 2>&1 | tee -a "$LOG_FILE" || true
-find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'messages-*.db' -print0 | sort -rn | tail -n +11 | xargs -r rm -v 2>&1 | tee -a "$LOG_FILE" || true
+find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'kb-*.sql' -print0 -z | sort -zrn | tail -zn +11 | xargs -0 rm -v 2>&1 | tee -a "$LOG_FILE" || true
+find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'messages-*.db' -print0 -z | sort -zrn | tail -zn +11 | xargs -0 rm -v 2>&1 | tee -a "$LOG_FILE" || true
 
 # Also cleanup Google Drive folder
 if [ -d "$GDRIVE_DIR" ]; then
-    find "$GDRIVE_DIR" -maxdepth 1 -name 'kb-*.sql' -print0 | sort -rn | tail -n +11 | xargs -r rm -v 2>&1 | tee -a "$LOG_FILE" || true
-    find "$GDRIVE_DIR" -maxdepth 1 -name 'messages-*.db' -print0 | sort -rn | tail -n +11 | xargs -r rm -v 2>&1 | tee -a "$LOG_FILE" || true
+    find "$GDRIVE_DIR" -maxdepth 1 -name 'kb-*.sql' -print0 -z | sort -zrn | tail -zn +11 | xargs -0 rm -v 2>&1 | tee -a "$LOG_FILE" || true
+    find "$GDRIVE_DIR" -maxdepth 1 -name 'messages-*.db' -print0 -z | sort -zrn | tail -zn +11 | xargs -0 rm -v 2>&1 | tee -a "$LOG_FILE" || true
 fi
 
 # Summary

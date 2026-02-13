@@ -1385,7 +1385,7 @@ async function processTaskIpc(
       }
 
       try {
-        const { updateUrl, updateContent, getSourceById } = await import('./kb/index.js');
+        const { updateUrl, updateContent, getSourceById, updateSource } = await import('./kb/index.js');
 
         let result;
         if (data.url) {
@@ -1414,12 +1414,17 @@ async function processTaskIpc(
               tags: data.tags as string[],
             });
           } else {
-            // No URL (text note) - only title/tags update possible via DB
+            // No URL (text note) - update title/tags via DB
             if (data.title || data.tags) {
+              updateSource(data.sourceId as string, {
+                title: data.title as string | undefined,
+                tags: data.tags as string[] | undefined,
+              });
               result = { success: true, source_id: source.id, updated: false };
             } else {
               result = { success: false, error: 'Text-only sources need title or tags to update' };
             }
+          }
         } else {
           logger.warn({ data }, 'Invalid kb_update request - missing url, source_id, or content');
           break;
