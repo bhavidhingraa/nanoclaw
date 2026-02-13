@@ -89,3 +89,27 @@ export const TRIGGER_PATTERN = new RegExp(
 // Uses system timezone by default
 export const TIMEZONE =
   process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+// ============================================================================
+// Knowledge Base Configuration
+// ============================================================================
+
+export const KB_DIR = path.join(DATA_DIR, 'kb');
+export const KB_LOCK_DIR = path.join(KB_DIR, 'locks');
+
+// Chunking settings
+export const KB_CHUNK_SIZE = 800;
+export const KB_CHUNK_OVERLAP = 200;
+export const KB_MIN_CHUNK = 100;
+
+// Search settings
+export const KB_SEARCH_LIMIT = 10;
+export const KB_MIN_SIMILARITY = 0.7;
+
+// URL detection patterns
+export const KB_URL_PATTERNS = {
+  tweet: /(?:https?:\/\/)?(?:www\.)?(?:twitter|x)\.com\/[\w]+\/status\/[\d]+/i,
+  youtube: /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)[\w-]+/i,
+  pdf: /\.pdf$/i,
+  url: /https?:\/\/[^\s]+/i,
+} as const;

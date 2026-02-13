@@ -6,7 +6,9 @@
       "Bash(./container/build.sh:*)",
       "Bash(gh pr list:*)",
       "Bash(python3:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "mcp__serena__think_about_collected_information",
+      "Bash(cat:*)"
     ]
   }
 }

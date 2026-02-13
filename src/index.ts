@@ -41,11 +41,14 @@ import {
   storeChatMetadata,
   storeMessage,
   updateChatName,
+  db,
 } from './db.js';
 import { startSchedulerLoop } from './task-scheduler.js';
 import { NewMessage, RegisteredGroup, Session } from './types.js';
 import { loadJson, saveJson } from './utils.js';
 import { logger } from './logger.js';
+import { initKB, ingestUrl, search as kbSearch, formatSearchResults } from './kb/index.js';
+import { KB_URL_PATTERNS } from './config.js';
 
 // Sugar path constant
 const SUGAR_PATH = '/Users/neetidhingra/Github/bhavidhingraa/sugar';
@@ -213,6 +216,36 @@ function getAssistantNameFromTrigger(trigger: string): string {
   return trigger.startsWith('@') ? trigger.slice(1) : trigger;
 }
 
+/**
+ * Detect URLs in a message using regex patterns
+ */
+function detectUrls(content: string): string[] {
+  const urls: string[] = [];
+
+  // Create a new global regex each time to avoid lastIndex issues
+  const urlPattern = new RegExp(KB_URL_PATTERNS.url.source, 'gi');
+  const matches = content.matchAll(urlPattern);
+
+  for (const match of matches) {
+    if (match[0]) {
+      urls.push(match[0]);
+    }
+  }
+
+  return urls;
+}
+
+/**
+ * Check if a message contains a question that might benefit from KB search
+ */
+function isSearchQuery(content: string): boolean {
+  const questionPatterns = [
+    /^(?:what|how|why|when|where|who|which|can|could|would|should|is|are|do|does)/i,
+    /\?$/,
+  ];
+  return questionPatterns.some((p) => p.test(content.trim()));
+}
+
 async function processMessage(msg: NewMessage): Promise<void> {
   const group = registeredGroups[msg.chat_jid];
   if (!group) return;
@@ -224,6 +257,21 @@ async function processMessage(msg: NewMessage): Promise<void> {
   if (!isMainGroup) {
     const triggerPattern = buildTriggerPattern(group.trigger);
     if (!triggerPattern.test(content)) return;
+  }
+
+  // Detect and auto-ingest URLs in background
+  const urls = detectUrls(content);
+  for (const url of urls) {
+    // Non-blocking ingestion
+    ingestUrl(url, { groupFolder: group.folder })
+      .then((result) => {
+        if (result.success) {
+          logger.info({ url, sourceId: result.source_id }, 'URL ingested to KB');
+        } else if (result.error && !result.error.includes('already ingested')) {
+          logger.debug({ url, error: result.error }, 'URL ingestion skipped');
+        }
+      })
+      .catch((err) => logger.debug({ url, err }, 'URL ingestion failed'));
   }
 
   // Get all messages since last agent interaction so the session has full context
@@ -256,7 +304,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
   );
 
   await setTyping(msg.chat_jid, true);
-  const response = await runAgent(group, prompt, msg.chat_jid);
+  const response = await runAgent(group, prompt, msg.chat_jid, missedMessages[missedMessages.length - 1]?.content);
   await setTyping(msg.chat_jid, false);
 
   if (response) {
@@ -270,6 +318,7 @@ async function runAgent(
   group: RegisteredGroup,
   prompt: string,
   chatJid: string,
+  lastMessageContent?: string,
 ): Promise<string | null> {
   const isMain = group.folder === MAIN_GROUP_FOLDER;
   const sessionId = sessions[group.folder];
@@ -299,9 +348,30 @@ async function runAgent(
     new Set(Object.keys(registeredGroups)),
   );
 
+  // Search KB for relevant context to add to prompt
+  let kbContext = '';
+  try {
+    if (lastMessageContent && isSearchQuery(lastMessageContent)) {
+      const results = await kbSearch(lastMessageContent, {
+        groupFolder: group.folder,
+        limit: 3,
+      });
+      if (results.length > 0) {
+        kbContext = formatSearchResults(results, 2000);
+      }
+    }
+  } catch (err) {
+    logger.debug({ err }, 'KB search failed, continuing without context');
+  }
+
+  // Prepend KB context to prompt if found
+  const enhancedPrompt = kbContext
+    ? `<knowledge_base>\n${kbContext}\n</knowledge_base>\n\n${prompt}`
+    : prompt;
+
   try {
     const output = await runContainerAgent(group, {
-      prompt,
+      prompt: enhancedPrompt,
       sessionId,
       groupFolder: group.folder,
       chatJid,
@@ -495,6 +565,12 @@ async function processTaskIpc(
     title?: string;
     body?: string;
     default?: boolean;
+    // For KB integration
+    url?: string;
+    query?: string;
+    content?: string;
+    tags?: string[];
+    sourceId?: string;
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -1211,6 +1287,214 @@ async function processTaskIpc(
       break;
     }
 
+    // ===== Knowledge Base Management Handlers =====
+
+    case 'kb_list': {
+      // Only main group can list all KB sources; others see only their own
+      const targetGroup = data.groupFolder ? data.groupFolder as string : sourceGroup;
+      if (!isMain && targetGroup !== sourceGroup) {
+        logger.warn({ sourceGroup, targetGroup }, 'Unauthorized kb_list attempt blocked');
+        break;
+      }
+
+      try {
+        const { listKBSources } = await import('./kb/index.js');
+        const sources = listKBSources(targetGroup, 100);
+
+        if (data.chatJid) {
+          if (sources.length === 0) {
+            await sendMessage(data.chatJid, `${ASSISTANT_NAME}: Knowledge base is empty.`);
+          } else {
+            const formatted = sources
+              .map(
+                (s) =>
+                  `- [${s.id.slice(0, 8)}] ${s.title || 'Untitled'} (${s.source_type})${s.url ? ` - ${s.url}` : ''}`,
+              )
+              .join('\n');
+            await sendMessage(data.chatJid, `${ASSISTANT_NAME}: KB entries (${sources.length}):\n${formatted}`);
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'KB list failed');
+        if (data.chatJid) {
+          await sendMessage(
+            data.chatJid,
+            `${ASSISTANT_NAME}: Failed to list KB - ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      break;
+    }
+
+    case 'kb_search': {
+      const query = data.query as string;
+      if (!query) {
+        logger.warn({ data }, 'Invalid kb_search request - missing query');
+        break;
+      }
+
+      // Search in the specified group or source group
+      const targetGroup = data.groupFolder ? (data.groupFolder as string) : sourceGroup;
+      if (!isMain && targetGroup !== sourceGroup) {
+        logger.warn({ sourceGroup, targetGroup }, 'Unauthorized kb_search attempt blocked');
+        break;
+      }
+
+      try {
+        const { search, formatSearchResults } = await import('./kb/index.js');
+        const results = await search(query, {
+          groupFolder: targetGroup,
+          limit: data.limit || 5,
+        });
+
+        if (data.chatJid) {
+          if (results.length === 0) {
+            await sendMessage(data.chatJid, `${ASSISTANT_NAME}: No results found for "${query.slice(0, 50)}"`);
+          } else {
+            const formatted = formatSearchResults(results, 2000);
+            await sendMessage(data.chatJid, `${ASSISTANT_NAME}: Found ${results.length} result(s):\n${formatted}`);
+          }
+        }
+      } catch (err) {
+        logger.error({ err, query }, 'KB search failed');
+        if (data.chatJid) {
+          await sendMessage(
+            data.chatJid,
+            `${ASSISTANT_NAME}: Search failed - ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      break;
+    }
+
+    case 'kb_update': {
+      // Update existing KB content (by URL or source ID)
+      const targetGroup = data.groupFolder ? (data.groupFolder as string) : sourceGroup;
+      if (!isMain && targetGroup !== sourceGroup) {
+        logger.warn({ sourceGroup, targetGroup }, 'Unauthorized kb_update attempt blocked');
+        break;
+      }
+
+      try {
+        const { updateUrl, updateContent } = await import('./kb/index.js');
+
+        let result;
+        if (data.url) {
+          result = await updateUrl(data.url as string, {
+            groupFolder: targetGroup,
+            title: data.title as string,
+            tags: data.tags as string[],
+          });
+        } else if (data.content) {
+          result = await updateContent(data.content as string, {
+            groupFolder: targetGroup,
+            url: data.url as string,
+            title: data.title as string,
+            tags: data.tags as string[],
+          });
+        } else {
+          logger.warn({ data }, 'Invalid kb_update request - missing url or content');
+          break;
+        }
+
+        if (data.chatJid) {
+          if (result.success) {
+            await sendMessage(
+              data.chatJid,
+              `${ASSISTANT_NAME}: KB entry updated${result.updated ? ' (re-indexed)' : ''}: ${result.source_id?.slice(0, 8)}`,
+            );
+          } else {
+            await sendMessage(data.chatJid, `${ASSISTANT_NAME}: Update failed - ${result.error}`);
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'KB update failed');
+        if (data.chatJid) {
+          await sendMessage(
+            data.chatJid,
+            `${ASSISTANT_NAME}: Update failed - ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      break;
+    }
+
+    case 'kb_add': {
+      // Add new plain text content to KB
+      const content = data.content as string;
+      if (!content) {
+        logger.warn({ data }, 'Invalid kb_add request - missing content');
+        break;
+      }
+
+      try {
+        const { ingestContent } = await import('./kb/index.js');
+        const result = await ingestContent(content, {
+          groupFolder: sourceGroup,
+          title: data.title as string,
+          tags: data.tags as string[],
+          sourceType: 'text',
+        });
+
+        if (data.chatJid) {
+          if (result.success) {
+            await sendMessage(
+              data.chatJid,
+              `${ASSISTANT_NAME}: Added to KB: ${result.source_id?.slice(0, 8)} (${result.chunks_count} chunks)`,
+            );
+          } else {
+            await sendMessage(data.chatJid, `${ASSISTANT_NAME}: Failed - ${result.error}`);
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'KB add failed');
+        if (data.chatJid) {
+          await sendMessage(
+            data.chatJid,
+            `${ASSISTANT_NAME}: Add failed - ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      break;
+    }
+
+    case 'kb_delete': {
+      // Delete KB entry by source ID
+      const targetGroup = data.groupFolder ? (data.groupFolder as string) : sourceGroup;
+      if (!isMain && targetGroup !== sourceGroup) {
+        logger.warn({ sourceGroup, targetGroup }, 'Unauthorized kb_delete attempt blocked');
+        break;
+      }
+
+      const sourceId = data.sourceId as string;
+      if (!sourceId) {
+        logger.warn({ data }, 'Invalid kb_delete request - missing sourceId');
+        break;
+      }
+
+      try {
+        const { deleteKBSource } = await import('./kb/index.js');
+        const result = await deleteKBSource(sourceId);
+
+        if (data.chatJid) {
+          if (result.success) {
+            await sendMessage(data.chatJid, `${ASSISTANT_NAME}: KB entry deleted: ${sourceId}`);
+          } else {
+            await sendMessage(data.chatJid, `${ASSISTANT_NAME}: Delete failed - ${result.error}`);
+          }
+        }
+      } catch (err) {
+        logger.error({ err, sourceId }, 'KB delete failed');
+        if (data.chatJid) {
+          await sendMessage(
+            data.chatJid,
+            `${ASSISTANT_NAME}: Delete failed - ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      break;
+    }
+
     default:
       logger.warn({ type: data.type }, 'Unknown IPC task type');
   }
@@ -1475,6 +1759,7 @@ function ensureContainerSystemRunning(): void {
 async function main(): Promise<void> {
   ensureContainerSystemRunning();
   initDatabase();
+  await initKB(db);
   logger.info('Database initialized');
   loadState();
   await connectWhatsApp();

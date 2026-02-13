@@ -9,6 +9,9 @@ import { NewMessage, ScheduledTask, TaskRunLog } from './types.js';
 
 let db: Database.Database;
 
+// Export db for KB module to use
+export { db };
+
 export function initDatabase(): void {
   const dbPath = path.join(STORE_DIR, 'messages.db');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });

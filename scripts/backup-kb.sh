@@ -1,0 +1,87 @@
+#!/bin/bash
+# NanoClaw Knowledge Base Backup to Google Drive
+# Backs up to local Google Drive folder (auto-syncs via Google Drive File Stream)
+
+set -euo pipefail
+
+# ===== CONFIGURATION =====
+PROJECT_DIR="/Users/neetidhingra/Github/bhavidhingraa/nanoclaw"
+DB_FILE="$PROJECT_DIR/store/messages.db"
+
+# Google Drive path - update this after installing Google Drive File Stream
+# Common locations:
+#   GDRIVE_DIR="/Volumes/Google Drive/Backups/NanoClaw"
+#   GDRIVE_DIR="$HOME/Google Drive/Backups/NanoClaw"
+GDRIVE_DIR="$HOME/Google Drive/My Drive/NanoClaw/Backups"
+# ======================
+
+LOCAL_BACKUP_DIR="$PROJECT_DIR/backups"
+LOG_FILE="$PROJECT_DIR/logs/backup.log"
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+# Create directories
+mkdir -p "$LOCAL_BACKUP_DIR"
+mkdir -p "$(dirname "$LOG_FILE")"
+
+# Logging function
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
+}
+
+log "=== Starting NanoClaw KB backup ==="
+
+# Check if database exists
+if [ ! -f "$DB_FILE" ]; then
+    log "ERROR: Database file not found at $DB_FILE"
+    exit 1
+fi
+
+# Export KB tables to SQL for human-readable backup
+SQL_BACKUP="$LOCAL_BACKUP_DIR/kb-$TIMESTAMP.sql"
+log "Exporting KB tables to SQL..."
+sqlite3 "$DB_FILE" <<EOF
+.output '$SQL_BACKUP'
+.dump kb_sources kb_chunks
+.quit
+EOF
+
+# Also backup full database
+DB_BACKUP="$LOCAL_BACKUP_DIR/messages-$TIMESTAMP.db"
+log "Copying full database..."
+cp "$DB_FILE" "$DB_BACKUP"
+
+# Get sizes for logging
+SQL_SIZE=$(wc -c < "$SQL_BACKUP" | tr -d ' ')
+DB_SIZE=$(wc -c < "$DB_BACKUP" | tr -d ' ')
+log "Backup created: SQL ($((SQL_SIZE / 1024))KB), DB ($((DB_SIZE / 1024))KB)"
+
+# Copy to Google Drive folder if available (Google Drive app will auto-sync)
+if [ -d "$(dirname "$GDRIVE_DIR")" ] || mkdir -p "$GDRIVE_DIR" 2>/dev/null; then
+    mkdir -p "$GDRIVE_DIR"
+    log "Copying to Google Drive folder: $GDRIVE_DIR"
+    cp "$SQL_BACKUP" "$GDRIVE_DIR/"
+    cp "$DB_BACKUP" "$GDRIVE_DIR/"
+    log "✓ Copied to Google Drive (will sync automatically)"
+else
+    log "WARNING: Google Drive folder not found at: $GDRIVE_DIR"
+    log "Local backup only saved to: $LOCAL_BACKUP_DIR"
+fi
+
+# Cleanup: keep only last 10 backups
+log "Cleaning up old backups (keeping last 10)..."
+ls -t "$LOCAL_BACKUP_DIR"/kb-*.sql 2>/dev/null | tail -n +11 | xargs -r rm -v 2>&1 | tee -a "$LOG_FILE" || true
+ls -t "$LOCAL_BACKUP_DIR"/messages-*.db 2>/dev/null | tail -n +11 | xargs -r rm -v 2>&1 | tee -a "$LOG_FILE" || true
+
+# Also cleanup Google Drive folder
+if [ -d "$GDRIVE_DIR" ]; then
+    ls -t "$GDRIVE_DIR"/kb-*.sql 2>/dev/null | tail -n +11 | xargs -r rm -v 2>&1 | tee -a "$LOG_FILE" || true
+    ls -t "$GDRIVE_DIR"/messages-*.db 2>/dev/null | tail -n +11 | xargs -r rm -v 2>&1 | tee -a "$LOG_FILE" || true
+fi
+
+# Summary
+REMAINING_SQL=$(ls "$LOCAL_BACKUP_DIR"/kb-*.sql 2>/dev/null | wc -l | tr -d ' ')
+REMAINING_DB=$(ls "$LOCAL_BACKUP_DIR"/messages-*.db 2>/dev/null | wc -l | tr -d ' ')
+
+log "=== Backup complete ==="
+log "Local backups: $REMAINING_SQL SQL files, $REMAINING_DB DB files"
+log "Backup dir: $LOCAL_BACKUP_DIR"
