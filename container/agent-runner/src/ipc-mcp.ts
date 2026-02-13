@@ -824,6 +824,17 @@ Note: This updates EXISTING entries. For new content, simply share the URL in ch
           tags: z.array(z.string()).optional().describe('Tags to categorize the entry')
         },
         async (args) => {
+          // Validate: at least one identifier must be provided
+          if (!args.url && !args.source_id && !args.content) {
+            return {
+              content: [{
+                type: 'text',
+                text: 'Error: To update a KB entry, you must provide either a "url", "source_id", or "content".'
+              }],
+              isError: true
+            };
+          }
+
           const data = {
             type: 'kb_update',
             url: args.url,

@@ -138,27 +138,6 @@ export function deserializeFloat32(buffer: Buffer): Float32Array {
 }
 
 /**
- * Calculate cosine similarity between two embeddings
- */
-export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
-  if (a.length !== b.length) {
-    throw new Error('Embedding dimensions must match');
-  }
-
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-}
-
-/**
  * Get embedding dimensions
  */
 export function getEmbeddingDimensions(): number {

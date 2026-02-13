@@ -181,7 +181,6 @@ function parseVTT(vtt: string): string {
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
-      .replace(/\d+/g, '') // Remove standalone numbers (timestamps)
       .trim();
 
     if (cleanLine && cleanLine.length > 2) {

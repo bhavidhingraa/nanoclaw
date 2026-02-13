@@ -1375,6 +1375,15 @@ async function processTaskIpc(
         break;
       }
 
+      // Validate: at least one identifier (url, source_id, or content) must be provided
+      if (!data.url && !data.sourceId && !data.content) {
+        logger.warn({ data }, 'Invalid kb_update request - missing url, source_id, or content');
+        if (data.chatJid) {
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: To update a KB entry, provide either a URL, source_id, or content.`);
+        }
+        break;
+      }
+
       try {
         const { updateUrl, updateContent } = await import('./kb/index.js');
 

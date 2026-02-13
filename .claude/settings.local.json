@@ -8,7 +8,9 @@
       "Bash(python3:*)",
       "Bash(ls:*)",
       "mcp__serena__think_about_collected_information",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh api:*)"
     ]
   }
 }

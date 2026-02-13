@@ -53,7 +53,6 @@ export {
   generateEmbeddingsBatch,
   serializeFloat32,
   deserializeFloat32,
-  cosineSimilarity,
   getEmbeddingDimensions,
   isAvailable as isEmbeddingAvailable,
   setAvailable as setEmbeddingAvailable,
