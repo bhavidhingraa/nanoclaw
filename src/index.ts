@@ -50,8 +50,8 @@ import { logger } from './logger.js';
 import { initKB, ingestUrl, search as kbSearch, formatSearchResults } from './kb/index.js';
 import { KB_URL_PATTERNS } from './config.js';
 
-// Sugar path constant
-const SUGAR_PATH = '/Users/neetidhingra/Github/bhavidhingraa/sugar';
+// Sugar path - configurable via env, falls back to local dev path
+const SUGAR_PATH = process.env.SUGAR_PATH || '/Users/neetidhingra/Github/bhavidhingraa/sugar';
 
 // Helper to build sugar command with proper PYTHONPATH
 function sugarCmd(args: string): string {
@@ -267,7 +267,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
       .then((result) => {
         if (result.success) {
           logger.info({ url, sourceId: result.source_id }, 'URL ingested to KB');
-        } else if (result.error && !result.error.includes('already ingested')) {
+        } else if (result.error && result.reason !== 'duplicate_url') {
           logger.debug({ url, error: result.error }, 'URL ingestion skipped');
         }
       })
@@ -1613,7 +1613,7 @@ async function connectWhatsApp(): Promise<void> {
       }
     } else if (connection === 'open') {
       logger.info('Connected to WhatsApp');
-      
+
       // Build LID to phone mapping from auth state for self-chat translation
       if (sock.user) {
         const phoneUser = sock.user.id.split(':')[0];
@@ -1623,7 +1623,7 @@ async function connectWhatsApp(): Promise<void> {
           logger.debug({ lidUser, phoneUser }, 'LID to phone mapping set');
         }
       }
-      
+
       // Sync group metadata on startup (respects 24h cache)
       syncGroupMetadata().catch((err) =>
         logger.error({ err }, 'Initial group sync failed'),
@@ -1649,7 +1649,7 @@ async function connectWhatsApp(): Promise<void> {
 
   // Debug: log all events to diagnose missing messages.upsert
   const originalEmit = sock.ev.emit;
-  sock.ev.emit = function(event, data) {
+  sock.ev.emit = function (event, data) {
     if (event !== 'messages.upsert' && event !== 'connection.update' && event !== 'creds.update') {
       logger.debug({ event }, 'Baileys event fired');
     }
@@ -1667,7 +1667,7 @@ async function connectWhatsApp(): Promise<void> {
 
       // Translate LID JID to phone JID if applicable
       const chatJid = translateJid(rawJid);
-      
+
       const timestamp = new Date(
         Number(msg.messageTimestamp) * 1000,
       ).toISOString();

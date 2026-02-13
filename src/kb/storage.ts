@@ -125,13 +125,17 @@ export function createSource(
 
 /**
  * Get source by ID
+ * @param groupFolder - If provided, enforces ownership check
  */
-export function getSourceById(id: string): KBSource | undefined {
+export function getSourceById(id: string, groupFolder?: string): KBSource | undefined {
   if (!db) throw new Error('Database not initialized');
 
-  const row = db
-    .prepare('SELECT * FROM kb_sources WHERE id = ?')
-    .get(id) as KBSourceRow | undefined;
+  const sql = groupFolder
+    ? 'SELECT * FROM kb_sources WHERE id = ? AND group_folder = ?'
+    : 'SELECT * FROM kb_sources WHERE id = ?';
+  const params = groupFolder ? [id, groupFolder] : [id];
+
+  const row = db.prepare(sql).get(...params) as KBSourceRow | undefined;
 
   return row ? rowToSource(row) : undefined;
 }
@@ -236,11 +240,16 @@ export function updateSource(
 
 /**
  * Delete source (cascades to chunks)
+ * @param groupFolder - If provided, enforces ownership check
  */
-export function deleteSource(id: string): void {
+export function deleteSource(id: string, groupFolder?: string): void {
   if (!db) throw new Error('Database not initialized');
 
-  db.prepare('DELETE FROM kb_sources WHERE id = ?').run(id);
+  if (groupFolder) {
+    db.prepare('DELETE FROM kb_sources WHERE id = ? AND group_folder = ?').run(id, groupFolder);
+  } else {
+    db.prepare('DELETE FROM kb_sources WHERE id = ?').run(id);
+  }
 }
 
 /**

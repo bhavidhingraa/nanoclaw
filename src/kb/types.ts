@@ -39,11 +39,20 @@ export interface IngestOptions {
   tags?: string[];
 }
 
+export type IngestFailureReason =
+  | 'duplicate_url'
+  | 'duplicate_hash'
+  | 'extraction_failed'
+  | 'validation_failed'
+  | 'unknown';
+
 export interface IngestResult {
   success: boolean;
   source_id?: string;
   chunks_count?: number;
   error?: string;
+  /** Structured reason code for programmatic checks */
+  reason?: IngestFailureReason;
   existingSourceId?: string;
   updated?: boolean;
 }

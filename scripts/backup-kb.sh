@@ -71,6 +71,22 @@ else
     log "Local backup only saved to: $LOCAL_BACKUP_DIR"
 fi
 
+# Clean up old backups (local: 30 days, Google Drive: 90 days)
+RETENTION_LOCAL_DAYS=30
+RETENTION_GDRIVE_DAYS=90
+
+DELETED_LOCAL=$(find "$LOCAL_BACKUP_DIR" -maxdepth 1 \( -name 'kb-*.sql' -o -name 'messages-*.db' \) -mtime +$RETENTION_LOCAL_DAYS -print -delete 2>/dev/null | wc -l | tr -d ' ')
+if [ "$DELETED_LOCAL" -gt 0 ]; then
+    log "Cleaned up $DELETED_LOCAL local backup(s) older than $RETENTION_LOCAL_DAYS days"
+fi
+
+if [ -d "$GDRIVE_DIR" ]; then
+    DELETED_GDRIVE=$(find "$GDRIVE_DIR" -maxdepth 1 \( -name 'kb-*.sql' -o -name 'messages-*.db' \) -mtime +$RETENTION_GDRIVE_DAYS -print -delete 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$DELETED_GDRIVE" -gt 0 ]; then
+        log "Cleaned up $DELETED_GDRIVE Google Drive backup(s) older than $RETENTION_GDRIVE_DAYS days"
+    fi
+fi
+
 # Summary
 REMAINING_SQL=$(find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'kb-*.sql' -print 2>/dev/null | wc -l | tr -d ' ')
 REMAINING_DB=$(find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'messages-*.db' -print 2>/dev/null | wc -l | tr -d ' ')

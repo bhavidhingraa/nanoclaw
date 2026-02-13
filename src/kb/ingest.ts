@@ -70,7 +70,7 @@ async function ingestUrlInternal(
         // Delete existing chunks (will cascade)
         deleteChunksBySourceId(existingByUrl.id);
       } else {
-        return { success: false, error: 'URL already ingested', existingSourceId: existingByUrl.id };
+        return { success: false, reason: 'duplicate_url', error: 'URL already ingested', existingSourceId: existingByUrl.id };
       }
     }
 
@@ -80,7 +80,7 @@ async function ingestUrlInternal(
     // Extract content
     const extracted = await extractContent(url, sourceType);
     if (!extracted) {
-      return { success: false, error: 'Content extraction failed' };
+      return { success: false, reason: 'extraction_failed', error: 'Content extraction failed' };
     }
 
     return await finishIngestion({
@@ -94,7 +94,7 @@ async function ingestUrlInternal(
     });
   } catch (err) {
     logger.error({ url, err }, 'URL ingestion failed');
-    return { success: false, error: String(err) };
+    return { success: false, reason: 'unknown', error: String(err) };
   } finally {
     release();
   }
@@ -143,7 +143,7 @@ async function ingestContentInternal(
         if (forceUpdate) {
           deleteChunksBySourceId(existingSource.id);
         } else {
-          return { success: false, error: 'URL already ingested', existingSourceId: existingSource.id };
+          return { success: false, reason: 'duplicate_url', error: 'URL already ingested', existingSourceId: existingSource.id };
         }
       }
     }
@@ -159,7 +159,7 @@ async function ingestContentInternal(
     });
   } catch (err) {
     logger.error({ err }, 'Content ingestion failed');
-    return { success: false, error: String(err) };
+    return { success: false, reason: 'unknown', error: String(err) };
   } finally {
     release();
   }
@@ -185,7 +185,7 @@ async function finishIngestion(params: {
   // Validate content quality
   const validation = validateContent(cleanedContent, sourceType);
   if (!validation.valid) {
-    return { success: false, error: validation.reason };
+    return { success: false, reason: 'validation_failed', error: validation.reason };
   }
 
   // Truncate if needed
@@ -198,7 +198,7 @@ async function finishIngestion(params: {
   if (!existingSource) {
     const existingByHash = getSourceByHash(contentHash);
     if (existingByHash) {
-      return { success: false, error: 'Duplicate content (same hash)', existingSourceId: existingByHash.id };
+      return { success: false, reason: 'duplicate_hash', error: 'Duplicate content (same hash)', existingSourceId: existingByHash.id };
     }
   }
 

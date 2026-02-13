@@ -78,20 +78,11 @@ export async function extractVideoTranscript(
         url
       ], { timeout: 60000 });
 
-      // Find created subtitle files
-      const possibleFiles = [
-        path.join(tmpDir, `${baseName}.en.vtt`),
-        path.join(tmpDir, `${baseName}.en-US.vtt`),
-        path.join(tmpDir, `${baseName}.zh-Hans.vtt`),
-        path.join(tmpDir, `${baseName}.vtt`),
-      ];
-
-      for (const f of possibleFiles) {
-        try {
-          await fs.access(f);
-          transcriptFiles.push(f);
-        } catch {
-          // File doesn't exist, skip
+      // Dynamically find all subtitle files created by yt-dlp
+      const tmpFiles = await fs.readdir(tmpDir);
+      for (const f of tmpFiles) {
+        if (f.startsWith(baseName) && f.endsWith('.vtt')) {
+          transcriptFiles.push(path.join(tmpDir, f));
         }
       }
     } catch (subErr) {
