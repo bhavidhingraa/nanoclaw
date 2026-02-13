@@ -819,6 +819,7 @@ Note: This updates EXISTING entries. For new content, simply share the URL in ch
         {
           url: z.string().optional().describe('URL of the content to update'),
           source_id: z.string().optional().describe('Source ID of the entry to update'),
+          content: z.string().optional().describe('New text content to update (for direct text entries)'),
           title: z.string().optional().describe('New title for the KB entry'),
           tags: z.array(z.string()).optional().describe('Tags to categorize the entry')
         },
@@ -827,6 +828,7 @@ Note: This updates EXISTING entries. For new content, simply share the URL in ch
             type: 'kb_update',
             url: args.url,
             sourceId: args.source_id,
+            content: args.content,
             title: args.title,
             tags: args.tags,
             groupFolder,
@@ -839,7 +841,7 @@ Note: This updates EXISTING entries. For new content, simply share the URL in ch
           return {
             content: [{
               type: 'text',
-              text: `Updating KB entry${args.url ? ` for URL` : args.source_id ? ` ${args.source_id}` : ''}...`
+              text: `Updating KB entry${args.url ? ` for URL` : args.source_id ? ` ${args.source_id}` : args.content ? ` with content` : ''}...`
             }]
           };
         }

@@ -2,18 +2,36 @@
  * YouTube video transcript extraction using yt-dlp
  */
 
-import { execSync } from 'child_process';
+import { exec } from 'child_process';
 import { logger } from '../../logger.js';
-import fs from 'fs';
+import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 
-// yt-dlp path - use full path since service may not have homebrew in PATH
-const YTDLP_PATH = '/opt/homebrew/bin/yt-dlp';
+// yt-dlp path - configurable via env, falls back to PATH resolution
+const YTDLP_PATH = process.env.YTDLP_PATH || 'yt-dlp';
 
 export interface ExtractedContent {
   title: string;
   content: string;
+}
+
+/**
+ * Execute a command asynchronously with timeout
+ */
+function execAsync(
+  command: string,
+  options: { timeout?: number } = {},
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const proc = exec(command, { timeout: options.timeout || 60000 }, (error, stdout, stderr) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve({ stdout: stdout?.toString() || '', stderr: stderr?.toString() || '' });
+      }
+    });
+  });
 }
 
 /**
@@ -30,38 +48,23 @@ export async function extractVideoTranscript(
   let transcriptFiles: string[] = [];
 
   try {
-    // Check if yt-dlp is available
-    try {
-      execSync(`test -x "${YTDLP_PATH}"`, { stdio: 'ignore' });
-    } catch {
-      logger.warn({ ytDlpPath: YTDLP_PATH }, 'yt-dlp not found at expected path');
-      return null;
-    }
-
     // Get video title first
-    const titleCmd = `${YTDLP_PATH} --no-warnings --skip-download --print '%(title)s' ${url}`;
+    const titleCmd = `${YTDLP_PATH} --no-warnings --skip-download --print '%(title)s' '${url}'`;
 
-    const title = execSync(titleCmd, {
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: 30000,
-    }).trim();
+    const titleResult = await execAsync(titleCmd, { timeout: 30000 });
+    const title = titleResult.stdout.trim();
 
     if (!title) {
       return null;
     }
 
     // Try to download subtitles (both manual and auto-generated)
-    const subCmd = `${YTDLP_PATH} --no-warnings --skip-download --write-subs --write-auto-subs --sub-langs en,en-US --sub-format vtt --output '${subPath}' ${url}`;
+    const subCmd = `${YTDLP_PATH} --no-warnings --skip-download --write-subs --write-auto-subs --sub-langs en,en-US --sub-format vtt --output '${subPath}' '${url}'`;
 
     try {
-      execSync(subCmd, {
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: 60000,
-      });
+      await execAsync(subCmd, { timeout: 60000 });
 
-      // Find the created subtitle files
+      // Find created subtitle files
       const possibleFiles = [
         path.join(tmpDir, `${baseName}.en.vtt`),
         path.join(tmpDir, `${baseName}.en-US.vtt`),
@@ -70,8 +73,11 @@ export async function extractVideoTranscript(
       ];
 
       for (const f of possibleFiles) {
-        if (fs.existsSync(f)) {
+        try {
+          await fs.access(f);
           transcriptFiles.push(f);
+        } catch {
+          // File doesn't exist, skip
         }
       }
     } catch (subErr) {
@@ -84,13 +90,13 @@ export async function extractVideoTranscript(
     if (transcriptFiles.length > 0) {
       for (const subFile of transcriptFiles) {
         try {
-          let vttContent = fs.readFileSync(subFile, 'utf-8');
+          const vttContent = await fs.readFile(subFile, 'utf-8');
 
           // Parse VTT format and extract text
           content = parseVTT(vttContent);
 
-          // Clean up the subtitle file
-          fs.unlinkSync(subFile);
+          // Clean up subtitle file
+          await fs.unlink(subFile);
         } catch (readErr) {
           logger.debug({ subFile, err: readErr }, 'Failed to read subtitle file');
         }
@@ -99,14 +105,11 @@ export async function extractVideoTranscript(
 
     // If no transcript or transcript is too short, fall back to description
     if (content.length < 200) {
-      const descCmd = `${YTDLP_PATH} --no-warnings --skip-download --print '%(description)s' ${url}`;
+      const descCmd = `${YTDLP_PATH} --no-warnings --skip-download --print '%(description)s' '${url}'`;
 
       try {
-        const description = execSync(descCmd, {
-          encoding: 'utf-8',
-          stdio: ['ignore', 'pipe', 'pipe'],
-          timeout: 30000,
-        }).trim() || '';
+        const descResult = await execAsync(descCmd, { timeout: 30000 });
+        const description = descResult.stdout.trim() || '';
 
         if (description.length > content.length) {
           content = description;
@@ -119,9 +122,7 @@ export async function extractVideoTranscript(
     // Clean up any remaining subtitle files
     for (const subFile of transcriptFiles) {
       try {
-        if (fs.existsSync(subFile)) {
-          fs.unlinkSync(subFile);
-        }
+        await fs.unlink(subFile);
       } catch {}
     }
 
@@ -142,9 +143,7 @@ export async function extractVideoTranscript(
     // Clean up any remaining subtitle files on error
     for (const subFile of transcriptFiles) {
       try {
-        if (fs.existsSync(subFile)) {
-          fs.unlinkSync(subFile);
-        }
+        await fs.unlink(subFile);
       } catch {}
     }
 

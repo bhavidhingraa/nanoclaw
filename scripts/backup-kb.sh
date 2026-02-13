@@ -5,7 +5,9 @@
 set -euo pipefail
 
 # ===== CONFIGURATION =====
-PROJECT_DIR="/Users/neetidhingra/Github/bhavidhingraa/nanoclaw"
+# Determine project directory dynamically relative to this script
+SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 DB_FILE="$PROJECT_DIR/store/messages.db"
 
 # Google Drive path - update this after installing Google Drive File Stream

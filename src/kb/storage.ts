@@ -63,9 +63,8 @@ export function initKBTables(database: Database.Database): void {
 
   // Load sqlite-vss extension for vector search
   try {
-    // Try to load from node_modules
-    const vssPath = require.resolve('sqlite-vss');
-    db.loadExtension(vssPath);
+    // Let better-sqlite3 resolve the module path
+    db.loadExtension('sqlite-vss');
 
     // Create virtual table for vector search
     db.exec(`
