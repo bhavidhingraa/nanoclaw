@@ -7,6 +7,7 @@ import { logger } from '../../logger.js';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import { decode } from 'entities';
 import crypto from 'crypto';
 
 // yt-dlp path - configurable via env, falls back to PATH resolution
@@ -177,16 +178,14 @@ function parseVTT(vtt: string): string {
     const cleanLine = trimmed
       .replace(/<[^>]+>/g, '') // Remove HTML tags
       .replace(/\{[^}]+\}/g, '') // Remove {} tags
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
       .trim();
 
+    // Use proper HTML entity decoder (handles all entities, not just common ones)
+    const decodedLine = decode(cleanLine);
+
     // Skip duplicate consecutive lines (common in auto-generated subtitles)
-    if (cleanLine && cleanLine.length > 2 && cleanLine !== textLines[textLines.length - 1]) {
-      textLines.push(cleanLine);
+    if (decodedLine && decodedLine.length > 2 && decodedLine !== textLines[textLines.length - 1]) {
+      textLines.push(decodedLine);
     }
   }
 

@@ -57,7 +57,7 @@ async function ingestUrlInternal(
   const { groupFolder, tags, sourceType: explicitType } = options;
 
   // Acquire lock
-  const release = await KBLock.acquire('ingest', groupFolder);
+  const release = KBLock.acquire('ingest', groupFolder);
 
   try {
     // Normalize URL
@@ -131,7 +131,7 @@ async function ingestContentInternal(
   const { groupFolder, title, tags, sourceType = 'text', url } = options;
 
   // Acquire lock
-  const release = await KBLock.acquire('ingest', groupFolder);
+  const release = KBLock.acquire('ingest', groupFolder);
 
   try {
     // If URL provided, check for existing

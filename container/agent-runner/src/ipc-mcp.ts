@@ -853,7 +853,7 @@ Note: This updates EXISTING entries. For new content, simply share the URL in ch
           return {
             content: [{
               type: 'text',
-              text: `Updating KB entry${args.url ? ` for URL` : args.source_id ? ` ${args.source_id}` : args.content ? ` with content` : ''}...`
+              text: `Updating KB entry${args.url ? ` for URL` : ` ${args.source_id}`}...`
             }]
           };
         }

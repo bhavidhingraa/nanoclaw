@@ -54,8 +54,8 @@ log "Copying full database..."
 cp "$DB_FILE" "$DB_BACKUP"
 
 # Get sizes for logging
-SQL_SIZE=$(wc -c < "$SQL_BACKUP" | tr -d ' ')
-DB_SIZE=$(wc -c < "$DB_BACKUP" | tr -d ' ')
+SQL_SIZE=$(stat -f%z "$SQL_BACKUP" 2>/dev/null || echo 0)
+DB_SIZE=$(stat -f%z "$DB_BACKUP" 2>/dev/null || echo 0)
 
 log "Backup created: SQL ($((SQL_SIZE / 1024))KB, DB ($((DB_SIZE / 1024))KB)"
 

@@ -15,7 +15,7 @@ export class KBLock {
    * Acquire a lock for a specific operation and group
    * Returns a release function that must be called when done
    */
-  static async acquire(operation: string, groupFolder: string): Promise<() => void> {
+  static acquire(operation: string, groupFolder: string): () => void {
     const lockDir = KB_LOCK_DIR;
     fs.mkdirSync(lockDir, { recursive: true });
 
