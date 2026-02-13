@@ -1385,7 +1385,7 @@ async function processTaskIpc(
       }
 
       try {
-        const { updateUrl, updateContent } = await import('./kb/index.js');
+        const { updateUrl, updateContent, getSourceById, updateSourceMetadata } = await import('./kb/index.js');
 
         let result;
         if (data.url) {
@@ -1401,8 +1401,30 @@ async function processTaskIpc(
             title: data.title as string,
             tags: data.tags as string[],
           });
+        } else if (data.sourceId) {
+          // Update by source ID - get source first, then update metadata
+          const source = getSourceById(data.sourceId as string, targetGroup);
+          if (!source) {
+            throw new Error(`Source not found: ${data.sourceId}`);
+          }
+          const source = getSourceById(data.sourceId as string, targetGroup);
+          if (!source) {
+            throw new Error(`Source not found: ${data.sourceId}`);
+          }
+          if (source.url) {
+            result = await updateUrl(source.url, {
+              groupFolder: targetGroup,
+              title: data.title as string,
+              tags: data.tags as string[],
+            });
+          } else {
+            result = { success: true, source_id: source.id, updated: false };
+          }
+            title: data.title as string,
+            tags: data.tags as string[],
+          });
         } else {
-          logger.warn({ data }, 'Invalid kb_update request - missing url or content');
+          logger.warn({ data }, 'Invalid kb_update request - missing url, source_id, or content');
           break;
         }
 

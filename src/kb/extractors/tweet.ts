@@ -4,6 +4,7 @@
 
 import type { ExtractedContent } from './article.js';
 import { logger } from '../../logger.js';
+import { decode } from 'entities';
 
 const FXTWITTER_API = 'https://api.fxtwitter.com/status';
 
@@ -71,9 +72,9 @@ export async function extractTweet(url: string): Promise<ExtractedContent | null
       // Try to extract tweet text from HTML
       const textMatch = html.match(/<meta\s+name="twitter:description"\s+content="([^"]+)"/);
       if (textMatch) {
-        const content = textMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+        const content = decode(textMatch[1]); // Properly decode HTML entities
         const titleMatch = html.match(/<meta\s+name="twitter:title"\s+content="([^"]+)"/);
-        const title = titleMatch ? titleMatch[1] : 'Tweet';
+        const title = titleMatch ? decode(titleMatch[1]) : 'Tweet';
 
         return {
           title,

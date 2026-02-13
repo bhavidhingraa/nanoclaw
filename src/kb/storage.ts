@@ -85,7 +85,7 @@ export function initKBTables(database: Database.Database): void {
     `);
   } catch (err) {
     // VSS extension not available - will use in-memory search
-    console.warn('sqlite-vss extension not loaded:', err);
+    logger.warn({ err }, 'sqlite-vss extension not loaded');
   }
 }
 

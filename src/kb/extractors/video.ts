@@ -2,7 +2,7 @@
  * YouTube video transcript extraction using yt-dlp
  */
 
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { logger } from '../../logger.js';
 import fs from 'fs/promises';
 import os from 'os';
@@ -17,14 +17,15 @@ export interface ExtractedContent {
 }
 
 /**
- * Execute a command asynchronously with timeout
+ * Execute a command with arguments as array (prevents shell injection)
  */
-function execAsync(
-  command: string,
+function execSafe(
+  file: string,
+  args: string[],
   options: { timeout?: number } = {},
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const proc = exec(command, { timeout: options.timeout || 60000 }, (error, stdout, stderr) => {
+    const proc = execFile(file, args, options, (error, stdout, stderr) => {
       if (error) {
         reject(error);
       } else {
@@ -49,9 +50,14 @@ export async function extractVideoTranscript(
 
   try {
     // Get video title first
-    const titleCmd = `${YTDLP_PATH} --no-warnings --skip-download --print '%(title)s' '${url}'`;
+    const titleResult = await execSafe(YTDLP_PATH, [
+      '--no-warnings',
+      '--skip-download',
+      '--print',
+      '%(title)s',
+      url
+    ], { timeout: 30000 });
 
-    const titleResult = await execAsync(titleCmd, { timeout: 30000 });
     const title = titleResult.stdout.trim();
 
     if (!title) {
@@ -59,10 +65,17 @@ export async function extractVideoTranscript(
     }
 
     // Try to download subtitles (both manual and auto-generated)
-    const subCmd = `${YTDLP_PATH} --no-warnings --skip-download --write-subs --write-auto-subs --sub-langs en,en-US --sub-format vtt --output '${subPath}' '${url}'`;
-
     try {
-      await execAsync(subCmd, { timeout: 60000 });
+      await execSafe(YTDLP_PATH, [
+        '--no-warnings',
+        '--skip-download',
+        '--write-subs',
+        '--write-auto-subs',
+        '--sub-langs', 'en,en-US',
+        '--sub-format', 'vtt',
+        '--output', subPath,
+        url
+      ], { timeout: 60000 });
 
       // Find created subtitle files
       const possibleFiles = [
@@ -105,10 +118,15 @@ export async function extractVideoTranscript(
 
     // If no transcript or transcript is too short, fall back to description
     if (content.length < 200) {
-      const descCmd = `${YTDLP_PATH} --no-warnings --skip-download --print '%(description)s' '${url}'`;
-
       try {
-        const descResult = await execAsync(descCmd, { timeout: 30000 });
+        const descResult = await execSafe(YTDLP_PATH, [
+          '--no-warnings',
+          '--skip-download',
+          '--print',
+          '%(description)s',
+          url
+        ], { timeout: 30000 });
+
         const description = descResult.stdout.trim() || '';
 
         if (description.length > content.length) {
