@@ -25,6 +25,34 @@ interface SearchRow {
 }
 
 /**
+ * Sort by similarity, optionally dedupe by source, and cap at limit.
+ */
+function processAndRankResults(
+  results: SearchResult[],
+  limit: number,
+  dedupeBySource: boolean,
+): SearchResult[] {
+  results.sort((a, b) => b.similarity - a.similarity);
+
+  let finalResults = results;
+  if (dedupeBySource) {
+    const bestBySource = new Map<string, SearchResult>();
+
+    for (const r of results) {
+      const existing = bestBySource.get(r.source_id);
+      if (!existing || r.similarity > existing.similarity) {
+        bestBySource.set(r.source_id, r);
+      }
+    }
+
+    finalResults = Array.from(bestBySource.values());
+    finalResults.sort((a, b) => b.similarity - a.similarity);
+  }
+
+  return finalResults.slice(0, limit);
+}
+
+/**
  * Search knowledge base for relevant content using sqlite-vss
  */
 export async function search(
@@ -102,26 +130,7 @@ export async function search(
       })
       .filter((r) => r.similarity >= minSimilarity);
 
-    // Sort by similarity descending
-    results.sort((a, b) => b.similarity - a.similarity);
-
-    // Dedupe by source (keep best chunk per source)
-    let finalResults = results;
-    if (dedupeBySource) {
-      const bestBySource = new Map<string, SearchResult>();
-
-      for (const r of results) {
-        const existing = bestBySource.get(r.source_id);
-        if (!existing || r.similarity > existing.similarity) {
-          bestBySource.set(r.source_id, r);
-        }
-      }
-
-      finalResults = Array.from(bestBySource.values());
-      finalResults.sort((a, b) => b.similarity - a.similarity);
-    }
-
-    return finalResults.slice(0, limit);
+    return processAndRankResults(results, limit, dedupeBySource);
   } catch (err) {
     logger.debug({ err }, 'VSS search failed, falling back to manual similarity');
     // Fall back to manual similarity calculation
@@ -180,26 +189,7 @@ async function fallbackSearch(
     }
   }
 
-  // Sort by similarity descending
-  results.sort((a, b) => b.similarity - a.similarity);
-
-  // Dedupe by source (keep best chunk per source)
-  let finalResults = results;
-  if (dedupeBySource) {
-    const bestBySource = new Map<string, SearchResult>();
-
-    for (const r of results) {
-      const existing = bestBySource.get(r.source_id);
-      if (!existing || r.similarity > existing.similarity) {
-        bestBySource.set(r.source_id, r);
-      }
-    }
-
-    finalResults = Array.from(bestBySource.values());
-    finalResults.sort((a, b) => b.similarity - a.similarity);
-  }
-
-  return finalResults.slice(0, limit);
+  return processAndRankResults(results, limit, dedupeBySource);
 }
 
 /**

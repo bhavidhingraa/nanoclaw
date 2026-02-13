@@ -57,7 +57,7 @@ cp "$DB_FILE" "$DB_BACKUP"
 SQL_SIZE=$(wc -c < "$SQL_BACKUP" | tr -d ' ')
 DB_SIZE=$(wc -c < "$DB_BACKUP" | tr -d ' ')
 
-log "Backup created: SQL ($((SQL_SIZE / 1024))KB, DB ($((DB_SIZE / 1024))KB"
+log "Backup created: SQL ($((SQL_SIZE / 1024))KB, DB ($((DB_SIZE / 1024))KB)"
 
 # Copy to Google Drive folder if available (Google Drive app will auto-sync)
 # Try to create directory and check if it succeeded
@@ -69,8 +69,6 @@ if mkdir -p "$GDRIVE_DIR" 2>/dev/null; then
 else
     log "WARNING: Could not create or access Google Drive folder at: $GDRIVE_DIR"
     log "Local backup only saved to: $LOCAL_BACKUP_DIR"
-fi
-
 fi
 
 # Summary

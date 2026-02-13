@@ -1375,11 +1375,11 @@ async function processTaskIpc(
         break;
       }
 
-      // Validate: at least one identifier (url, source_id, or content) must be provided
-      if (!data.url && !data.sourceId && !data.content) {
-        logger.warn({ data }, 'Invalid kb_update request - missing url, source_id, or content');
+      // Validate: at least one identifier (url, or source_id) must be provided
+      if (!data.url && !data.sourceId) {
+        logger.warn({ data }, 'Invalid kb_update request - missing url or sourceId');
         if (data.chatJid) {
-          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: To update a KB entry, provide either a URL, source_id, or content.`);
+          await sendMessage(data.chatJid, `${ASSISTANT_NAME}: To update a KB entry, you must provide either a "url" or a "source_id".`);
         }
         break;
       }

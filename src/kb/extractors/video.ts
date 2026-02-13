@@ -108,9 +108,6 @@ export async function extractVideoTranscript(
 
           // Parse VTT format and extract text
           content = parseVTT(vttContent);
-
-          // Clean up subtitle file
-          await fs.unlink(subFile);
         } catch (readErr) {
           logger.debug({ subFile, err: readErr }, 'Failed to read subtitle file');
         }
@@ -138,13 +135,6 @@ export async function extractVideoTranscript(
       }
     }
 
-    // Clean up any remaining subtitle files
-    for (const subFile of transcriptFiles) {
-      try {
-        await fs.unlink(subFile);
-      } catch {}
-    }
-
     if (content.length > 50) {
       logger.info({ url, title, contentLength: content.length }, 'Video content extracted');
       return { title, content };
@@ -158,15 +148,16 @@ export async function extractVideoTranscript(
     };
   } catch (err) {
     logger.error({ url, err }, 'Video extraction failed');
-
-    // Clean up any remaining subtitle files on error
+    return null;
+  } finally {
+    // Centralized cleanup — always runs
     for (const subFile of transcriptFiles) {
       try {
         await fs.unlink(subFile);
-      } catch {}
+      } catch {
+        // Ignore cleanup errors
+      }
     }
-
-    return null;
   }
 }
 
