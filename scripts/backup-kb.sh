@@ -73,18 +73,54 @@ fi
 
 # Cleanup: keep only last 10 backups
 log "Cleaning up old backups (keeping last 10)..."
-find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'kb-*.sql' -print0 -z | sort -zrn | tail -zn +11 | xargs -0 rm -v 2>&1 | tee -a "$LOG_FILE" || true
-find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'messages-*.db' -print0 -z | sort -zrn | tail -zn +11 | xargs -0 rm -v 2>&1 | tee -a "$LOG_FILE" || true
+# Use POSIX-compatible commands (no GNU extensions like -z, --zero-buffered)
+# Get list of SQL files, sort by name, keep last 10
+if find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'kb-*.sql' -print 2>/dev/null; then
+    find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'kb-*.sql' -print 2>/dev/null | \
+    sort -r | \
+        tail -n +11 | \
+        while IFS= read -r file; do
+            rm -v "$file" 2>&1 || true
+        done | \
+        tee -a "$LOG_FILE" || true
+fi
+
+# Same for DB files
+if find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'messages-*.db' -print 2>/dev/null; then
+    find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'messages-*.db' -print 2>/dev/null | \
+        sort -r | \
+        tail -n +11 | \
+        while IFS= read -r file; do
+            rm -v "$file" 2>&1 || true
+        done | \
+        tee -a "$LOG_FILE" || true
+fi
 
 # Also cleanup Google Drive folder
 if [ -d "$GDRIVE_DIR" ]; then
-    find "$GDRIVE_DIR" -maxdepth 1 -name 'kb-*.sql' -print0 -z | sort -zrn | tail -zn +11 | xargs -0 rm -v 2>&1 | tee -a "$LOG_FILE" || true
-    find "$GDRIVE_DIR" -maxdepth 1 -name 'messages-*.db' -print0 -z | sort -zrn | tail -zn +11 | xargs -0 rm -v 2>&1 | tee -a "$LOG_FILE" || true
+    if find "$GDRIVE_DIR" -maxdepth 1 -name 'kb-*.sql' -print 2>/dev/null; then
+        find "$GDRIVE_DIR" -maxdepth 1 -name 'kb-*.sql' -print 2>/dev/null | \
+            sort -r | \
+            tail -n +11 | \
+            while IFS= read -r file; do
+                rm -v "$file" 2>&1 || true
+            done | \
+            tee -a "$LOG_FILE" || true
+    fi
+    if find "$GDRIVE_DIR" -maxdepth 1 -name 'messages-*.db' -print 2>/dev/null; then
+        find "$GDRIVE_DIR" -maxdepth 1 -name 'messages-*.db' -print 2>/dev/null | \
+            sort -r | \
+            tail -n +11 | \
+            while IFS= read -r file; do
+                rm -v "$file" 2>&1 || true
+            done | \
+            tee -a "$LOG_FILE" || true
+    fi
 fi
 
 # Summary
-REMAINING_SQL=$(find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'kb-*.sql' -print0 | wc -l | tr -d ' ')
-REMAINING_DB=$(find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'messages-*.db' -print0 | wc -l | tr -d ' ')
+REMAINING_SQL=$(find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'kb-*.sql' -print 2>/dev/null | wc -l | tr -d ' ')
+REMAINING_DB=$(find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'messages-*.db' -print 2>/dev/null | wc -l | tr -d ' ')
 
 log "=== Backup complete ==="
 log "Local backups: $REMAINING_SQL SQL files, $REMAINING_DB DB files"

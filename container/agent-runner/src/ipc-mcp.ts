@@ -824,12 +824,13 @@ Note: This updates EXISTING entries. For new content, simply share the URL in ch
           tags: z.array(z.string()).optional().describe('Tags to categorize the entry')
         },
         async (args) => {
-          // Validate: at least one identifier must be provided
-          if (!args.url && !args.source_id && !args.content) {
+          // Validate: at least one identifier (url or source_id) must be provided
+          // content is an update value, not an identifier
+          if (!args.url && !args.source_id) {
             return {
               content: [{
                 type: 'text',
-                text: 'Error: To update a KB entry, you must provide either a "url", "source_id", or "content".'
+                text: 'Error: To update a KB entry, you must provide either a "url" or a "source_id".'
               }],
               isError: true
             };

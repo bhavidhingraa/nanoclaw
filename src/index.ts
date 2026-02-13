@@ -1389,42 +1389,51 @@ async function processTaskIpc(
 
         let result;
         if (data.url) {
+          // Update by URL - re-fetches and re-ingests
           result = await updateUrl(data.url as string, {
             groupFolder: targetGroup,
             title: data.title as string,
             tags: data.tags as string[],
           });
+        } else if (data.sourceId) {
+          // Update by source ID
+          const source = getSourceById(data.sourceId as string, targetGroup);
+          if (!source) {
+            throw new Error(`Source not found: ${data.sourceId}`);
+          }
+          if (data.content) {
+            // Update both content and metadata for existing source
+            result = await updateContent(data.content as string, {
+              groupFolder: targetGroup,
+              url: source.url || undefined,
+              title: data.title as string,
+              tags: data.tags as string[],
+            });
+          } else if (source.url) {
+            // Has URL - re-fetch and update
+            result = await updateUrl(source.url, {
+              groupFolder: targetGroup,
+              title: data.title as string,
+              tags: data.tags as string[],
+            });
+          } else if (data.title || data.tags) {
+            // No URL (text note) - update title/tags via DB
+            updateSource(data.sourceId as string, {
+              title: data.title as string | undefined,
+              tags: data.tags as string[] | undefined,
+            });
+            result = { success: true, source_id: source.id, updated: false };
+          } else {
+            result = { success: false, error: 'Text-only sources need title or tags to update' };
+          }
         } else if (data.content) {
+          // Create new entry from content (no URL, no sourceId)
           result = await updateContent(data.content as string, {
             groupFolder: targetGroup,
             url: data.url as string,
             title: data.title as string,
             tags: data.tags as string[],
           });
-        } else if (data.sourceId) {
-          // Update by source ID - get source first, then update metadata
-          const source = getSourceById(data.sourceId as string, targetGroup);
-          if (!source) {
-            throw new Error(`Source not found: ${data.sourceId}`);
-          }
-          if (source.url) {
-            result = await updateUrl(source.url, {
-              groupFolder: targetGroup,
-              title: data.title as string,
-              tags: data.tags as string[],
-            });
-          } else {
-            // No URL (text note) - update title/tags via DB
-            if (data.title || data.tags) {
-              updateSource(data.sourceId as string, {
-                title: data.title as string | undefined,
-                tags: data.tags as string[] | undefined,
-              });
-              result = { success: true, source_id: source.id, updated: false };
-            } else {
-              result = { success: false, error: 'Text-only sources need title or tags to update' };
-            }
-          }
         } else {
           logger.warn({ data }, 'Invalid kb_update request - missing url, source_id, or content');
           break;

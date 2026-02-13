@@ -201,7 +201,8 @@ function parseVTT(vtt: string): string {
       .replace(/&#39;/g, "'")
       .trim();
 
-    if (cleanLine && cleanLine.length > 2) {
+    // Skip duplicate consecutive lines (common in auto-generated subtitles)
+    if (cleanLine && cleanLine.length > 2 && cleanLine !== textLines[textLines.length - 1]) {
       textLines.push(cleanLine);
     }
   }
