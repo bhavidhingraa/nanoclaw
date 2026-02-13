@@ -46,6 +46,6 @@ When you learn something important:
 - Add recurring context directly to this CLAUDE.md
 - Always index new memory files at the top of CLAUDE.md
 
-### Knowledge Base Files
+### Projects & Deadlines
 
-- `claude-marketing-use-case.md` - Real-world example of Anthropic marketer using Claude Code to build a Figma plugin for automating ad creative variations (60x faster workflow)
+- **TRX Delegation Project** - Due: March 16th, 2026
