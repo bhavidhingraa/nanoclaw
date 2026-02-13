@@ -1385,7 +1385,7 @@ async function processTaskIpc(
       }
 
       try {
-        const { updateUrl, updateContent, getSourceById, updateSourceMetadata } = await import('./kb/index.js');
+        const { updateUrl, updateContent, getSourceById } = await import('./kb/index.js');
 
         let result;
         if (data.url) {
@@ -1407,10 +1407,6 @@ async function processTaskIpc(
           if (!source) {
             throw new Error(`Source not found: ${data.sourceId}`);
           }
-          const source = getSourceById(data.sourceId as string, targetGroup);
-          if (!source) {
-            throw new Error(`Source not found: ${data.sourceId}`);
-          }
           if (source.url) {
             result = await updateUrl(source.url, {
               groupFolder: targetGroup,
@@ -1418,11 +1414,12 @@ async function processTaskIpc(
               tags: data.tags as string[],
             });
           } else {
-            result = { success: true, source_id: source.id, updated: false };
-          }
-            title: data.title as string,
-            tags: data.tags as string[],
-          });
+            // No URL (text note) - only title/tags update possible via DB
+            if (data.title || data.tags) {
+              result = { success: true, source_id: source.id, updated: false };
+            } else {
+              result = { success: false, error: 'Text-only sources need title or tags to update' };
+            }
         } else {
           logger.warn({ data }, 'Invalid kb_update request - missing url, source_id, or content');
           break;

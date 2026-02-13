@@ -13,9 +13,8 @@ DB_FILE="$PROJECT_DIR/store/messages.db"
 # Google Drive path - update this after installing Google Drive File Stream
 # Common locations:
 #   GDRIVE_DIR="/Volumes/Google Drive/Backups/NanoClaw"
-#   GDRIVE_DIR="$HOME/Google Drive/Backups/NanoClaw"
+#   GDRIVE_DIR="$HOME/Google Drive/My Drive/NanoClaw/Backups"
 GDRIVE_DIR="$HOME/Google Drive/My Drive/NanoClaw/Backups"
-# ======================
 
 LOCAL_BACKUP_DIR="$PROJECT_DIR/backups"
 LOG_FILE="$PROJECT_DIR/logs/backup.log"
@@ -40,6 +39,7 @@ fi
 
 # Export KB tables to SQL for human-readable backup
 SQL_BACKUP="$LOCAL_BACKUP_DIR/kb-$TIMESTAMP.sql"
+
 log "Exporting KB tables to SQL..."
 sqlite3 "$DB_FILE" <<EOF
 .output '$SQL_BACKUP'
@@ -49,40 +49,42 @@ EOF
 
 # Also backup full database
 DB_BACKUP="$LOCAL_BACKUP_DIR/messages-$TIMESTAMP.db"
+
 log "Copying full database..."
 cp "$DB_FILE" "$DB_BACKUP"
 
 # Get sizes for logging
 SQL_SIZE=$(wc -c < "$SQL_BACKUP" | tr -d ' ')
 DB_SIZE=$(wc -c < "$DB_BACKUP" | tr -d ' ')
-log "Backup created: SQL ($((SQL_SIZE / 1024))KB), DB ($((DB_SIZE / 1024))KB)"
+
+log "Backup created: SQL ($((SQL_SIZE / 1024))KB), DB ($((DB_SIZE / 1024))KB"
 
 # Copy to Google Drive folder if available (Google Drive app will auto-sync)
-if [ -d "$(dirname "$GDRIVE_DIR")" ] || mkdir -p "$GDRIVE_DIR" 2>/dev/null; then
-    mkdir -p "$GDRIVE_DIR"
+# Try to create directory and check if it succeeded
+if mkdir -p "$GDRIVE_DIR" 2>/dev/null; then
     log "Copying to Google Drive folder: $GDRIVE_DIR"
     cp "$SQL_BACKUP" "$GDRIVE_DIR/"
     cp "$DB_BACKUP" "$GDRIVE_DIR/"
     log "✓ Copied to Google Drive (will sync automatically)"
 else
-    log "WARNING: Google Drive folder not found at: $GDRIVE_DIR"
+    log "WARNING: Could not create or access Google Drive folder at: $GDRIVE_DIR"
     log "Local backup only saved to: $LOCAL_BACKUP_DIR"
 fi
 
 # Cleanup: keep only last 10 backups
 log "Cleaning up old backups (keeping last 10)..."
-ls -t "$LOCAL_BACKUP_DIR"/kb-*.sql 2>/dev/null | tail -n +11 | xargs -r rm -v 2>&1 | tee -a "$LOG_FILE" || true
-ls -t "$LOCAL_BACKUP_DIR"/messages-*.db 2>/dev/null | tail -n +11 | xargs -r rm -v 2>&1 | tee -a "$LOG_FILE" || true
+find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'kb-*.sql' -print0 | sort -rn | tail -n +11 | xargs -r rm -v 2>&1 | tee -a "$LOG_FILE" || true
+find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'messages-*.db' -print0 | sort -rn | tail -n +11 | xargs -r rm -v 2>&1 | tee -a "$LOG_FILE" || true
 
 # Also cleanup Google Drive folder
 if [ -d "$GDRIVE_DIR" ]; then
-    ls -t "$GDRIVE_DIR"/kb-*.sql 2>/dev/null | tail -n +11 | xargs -r rm -v 2>&1 | tee -a "$LOG_FILE" || true
-    ls -t "$GDRIVE_DIR"/messages-*.db 2>/dev/null | tail -n +11 | xargs -r rm -v 2>&1 | tee -a "$LOG_FILE" || true
+    find "$GDRIVE_DIR" -maxdepth 1 -name 'kb-*.sql' -print0 | sort -rn | tail -n +11 | xargs -r rm -v 2>&1 | tee -a "$LOG_FILE" || true
+    find "$GDRIVE_DIR" -maxdepth 1 -name 'messages-*.db' -print0 | sort -rn | tail -n +11 | xargs -r rm -v 2>&1 | tee -a "$LOG_FILE" || true
 fi
 
 # Summary
-REMAINING_SQL=$(ls "$LOCAL_BACKUP_DIR"/kb-*.sql 2>/dev/null | wc -l | tr -d ' ')
-REMAINING_DB=$(ls "$LOCAL_BACKUP_DIR"/messages-*.db 2>/dev/null | wc -l | tr -d ' ')
+REMAINING_SQL=$(find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'kb-*.sql' -print0 | wc -l | tr -d ' ')
+REMAINING_DB=$(find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'messages-*.db' -print0 | wc -l | tr -d ' ')
 
 log "=== Backup complete ==="
 log "Local backups: $REMAINING_SQL SQL files, $REMAINING_DB DB files"

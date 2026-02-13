@@ -3,6 +3,7 @@
  */
 
 import Database from 'better-sqlite3';
+import { logger } from '../logger.js';
 import type { KBSource, KBChunk } from './types.js';
 
 // Re-export types for convenience
