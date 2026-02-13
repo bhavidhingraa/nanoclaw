@@ -729,6 +729,214 @@ Example: github_pr_status({ repo: "owner/repo" })`,
             }]
           };
         }
+      ),
+
+      // ===== Knowledge Base Tools =====
+
+      tool(
+        'kb_list',
+        `List all entries in the Knowledge Base.
+
+The Knowledge Base (KB) stores external knowledge like articles, videos, PDFs, and documents that have been shared via URLs.
+
+Examples:
+- kb_list() - List all KB entries for current group
+- kb_list({ group_folder: "main" }) - List entries for specific group (main only)
+
+Main group can see all groups' entries. Other groups see only their own.`,
+        {
+          group_folder: z.string().optional().describe('Target group folder (main only can specify other groups)')
+        },
+        async (args) => {
+          const data = {
+            type: 'kb_list',
+            groupFolder: args.group_folder,
+            chatJid,
+            isMain,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Listing KB entries${args.group_folder ? ` for ${args.group_folder}` : '...'}`
+            }]
+          };
+        }
+      ),
+
+      tool(
+        'kb_search',
+        `Search the Knowledge Base by semantic similarity.
+
+Finds relevant content from articles, videos, PDFs, and documents stored in the KB.
+
+Examples:
+- kb_search({ query: "Claude marketing" }) - Search for Claude marketing content
+- kb_search({ query: "task management", limit: 5 }) - Get top 5 results
+
+Results are ranked by semantic similarity to your query.`,
+        {
+          query: z.string().describe('Search query to find relevant content'),
+          limit: z.number().optional().describe('Maximum number of results to return (default: 5)')
+        },
+        async (args) => {
+          const data = {
+            type: 'kb_search',
+            query: args.query,
+            limit: args.limit,
+            groupFolder,
+            chatJid,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Searching KB for: "${args.query}"...`
+            }]
+          };
+        }
+      ),
+
+      tool(
+        'kb_update',
+        `Update an existing KB entry by URL or source ID.
+
+Use this to:
+- Refresh/re-index a URL (re-fetches content)
+- Update metadata (title, tags) for an entry
+
+Examples:
+- kb_update({ url: "https://youtube.com/watch?v=xxx" }) - Refresh video transcript
+- kb_update({ source_id: "kb-xxx", title: "New Title", tags: ["marketing"] }) - Update metadata
+
+Note: This updates EXISTING entries. For new content, simply share the URL in chat.`,
+        {
+          url: z.string().optional().describe('URL of the content to update'),
+          source_id: z.string().optional().describe('Source ID of the entry to update'),
+          content: z.string().optional().describe('New text content to update (for direct text entries)'),
+          title: z.string().optional().describe('New title for the KB entry'),
+          tags: z.array(z.string()).optional().describe('Tags to categorize the entry')
+        },
+        async (args) => {
+          // Validate: at least one identifier (url or source_id) must be provided
+          // content is an update value, not an identifier
+          if (!args.url && !args.source_id) {
+            return {
+              content: [{
+                type: 'text',
+                text: 'Error: To update a KB entry, you must provide either a "url" or a "source_id".'
+              }],
+              isError: true
+            };
+          }
+
+          const data = {
+            type: 'kb_update',
+            url: args.url,
+            sourceId: args.source_id,
+            content: args.content,
+            title: args.title,
+            tags: args.tags,
+            groupFolder,
+            chatJid,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Updating KB entry${args.url ? ` for URL` : ` ${args.source_id}`}...`
+            }]
+          };
+        }
+      ),
+
+      tool(
+        'kb_add',
+        `Add plain text or notes to the Knowledge Base.
+
+Use this for storing any text content you want to search later - dates, preferences, reminders, notes, etc.
+
+Examples:
+- kb_add({ content: "Marriage anniversary: April 16th, 2022" })
+- kb_add({ content: "Neet prefers coffee, Bhavi prefers tea", title: "Beverage preferences" })
+- kb_add({ content: "Remember to call mom on Sundays", tags: ["family", "reminder"] })
+
+The KB will create embeddings so this can be found later via semantic search.`,
+        {
+          content: z.string().describe('The text content to store'),
+          title: z.string().optional().describe('Optional title for the entry'),
+          tags: z.array(z.string()).optional().describe('Optional tags for categorization')
+        },
+        async (args) => {
+          const data = {
+            type: 'kb_add',
+            content: args.content,
+            title: args.title,
+            tags: args.tags,
+            groupFolder,
+            chatJid,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Adding to KB...`
+            }]
+          };
+        }
+      ),
+
+      tool(
+        'kb_delete',
+        `Delete a KB entry by source ID.
+
+⚠️ WARNING: This deletes from the KNOWLEDGE BASE (SQLite database), NOT your memory files.
+
+KB stores external knowledge (articles, videos, PDFs) shared via URLs.
+Memory stores your learned info in /workspace/group/CLAUDE.md.
+
+Before deleting:
+1. Use kb_list() to find the entry
+2. Confirm the source_id with the user
+3. Use this tool with the source_id
+
+Example:
+- kb_delete({ source_id: "kb-1739451234-abc123" })
+
+The entry and all its chunks will be permanently removed.`,
+        {
+          source_id: z.string().describe('The source ID of the KB entry to delete (e.g., "kb-1739451234-abc123")')
+        },
+        async (args) => {
+          const data = {
+            type: 'kb_delete',
+            sourceId: args.source_id,
+            groupFolder,
+            chatJid,
+            timestamp: new Date().toISOString()
+          };
+
+          writeIpcFile(TASKS_DIR, data);
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Deleting KB entry: ${args.source_id}`
+            }]
+          };
+        }
       )
     ]
   });

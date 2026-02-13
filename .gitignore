@@ -24,3 +24,9 @@ groups/*/conversations/
 agents-sdk-docs
 
 workspace
+
+# Serena MCP
+.serena
+
+# KB backups
+backups

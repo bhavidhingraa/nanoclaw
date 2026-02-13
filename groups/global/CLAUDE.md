@@ -45,3 +45,29 @@ When you learn something important:
 - Split files larger than 500 lines into folders
 - Add recurring context directly to this CLAUDE.md
 - Always index new memory files at the top of CLAUDE.md
+
+## Knowledge Base (KB)
+
+You have access to a **Knowledge Base** (KB) - a SQLite database at `/workspace/project/store/messages.db` that stores external knowledge (articles, videos, PDFs, tweets) with semantic search.
+
+### KB vs Memory - IMPORTANT
+
+| KB (Knowledge Base) | Memory (Files) |
+|---------------------|----------------|
+| SQLite database with embeddings | Files in `/workspace/group/` |
+| External knowledge shared via URLs | Your learned info, preferences |
+| Use `kb_*` tools to manage | Use file operations |
+
+**CRITICAL**: When users say "delete from KB", they mean the KB database - NOT your memory files. Do NOT delete files when asked to manage the KB.
+
+### KB Tools
+
+- `kb_add({ content: "..." })` - Add plain text/notes to KB (dates, preferences, reminders)
+- `kb_list()` - List your KB entries
+- `kb_search({ query: "..." })` - Search KB by content
+- `kb_delete({ source_id: "kb-xxx" })` - Delete a KB entry
+- `kb_update({ url: "..." })` - Refresh a URL in KB
+
+### Projects & Deadlines
+
+- **TRX Delegation Project** - Due: March 16th, 2026
