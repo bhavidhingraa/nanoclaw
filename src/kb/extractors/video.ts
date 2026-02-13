@@ -7,6 +7,7 @@ import { logger } from '../../logger.js';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import crypto from 'crypto';
 
 // yt-dlp path - configurable via env, falls back to PATH resolution
 const YTDLP_PATH = process.env.YTDLP_PATH || 'yt-dlp';
@@ -44,7 +45,7 @@ export async function extractVideoTranscript(
   url: string,
 ): Promise<ExtractedContent | null> {
   const tmpDir = os.tmpdir();
-  const baseName = `yt-sub-${Date.now()}`;
+  const baseName = `yt-sub-${crypto.randomBytes(8).toString('hex')}`;
   const subPath = path.join(tmpDir, `${baseName}.%(ext)s`);
   let transcriptFiles: string[] = [];
 

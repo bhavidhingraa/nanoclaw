@@ -57,7 +57,7 @@ cp "$DB_FILE" "$DB_BACKUP"
 SQL_SIZE=$(wc -c < "$SQL_BACKUP" | tr -d ' ')
 DB_SIZE=$(wc -c < "$DB_BACKUP" | tr -d ' ')
 
-log "Backup created: SQL ($((SQL_SIZE / 1024))KB), DB ($((DB_SIZE / 1024))KB"
+log "Backup created: SQL ($((SQL_SIZE / 1024))KB, DB ($((DB_SIZE / 1024))KB"
 
 # Copy to Google Drive folder if available (Google Drive app will auto-sync)
 # Try to create directory and check if it succeeded
@@ -71,51 +71,6 @@ else
     log "Local backup only saved to: $LOCAL_BACKUP_DIR"
 fi
 
-# Cleanup: keep only last 10 backups
-log "Cleaning up old backups (keeping last 10)..."
-# Use POSIX-compatible commands (no GNU extensions like -z, --zero-buffered)
-# Get list of SQL files, sort by name, keep last 10
-if find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'kb-*.sql' -print 2>/dev/null; then
-    find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'kb-*.sql' -print 2>/dev/null | \
-    sort -r | \
-        tail -n +11 | \
-        while IFS= read -r file; do
-            rm -v "$file" 2>&1 || true
-        done | \
-        tee -a "$LOG_FILE" || true
-fi
-
-# Same for DB files
-if find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'messages-*.db' -print 2>/dev/null; then
-    find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name 'messages-*.db' -print 2>/dev/null | \
-        sort -r | \
-        tail -n +11 | \
-        while IFS= read -r file; do
-            rm -v "$file" 2>&1 || true
-        done | \
-        tee -a "$LOG_FILE" || true
-fi
-
-# Also cleanup Google Drive folder
-if [ -d "$GDRIVE_DIR" ]; then
-    if find "$GDRIVE_DIR" -maxdepth 1 -name 'kb-*.sql' -print 2>/dev/null; then
-        find "$GDRIVE_DIR" -maxdepth 1 -name 'kb-*.sql' -print 2>/dev/null | \
-            sort -r | \
-            tail -n +11 | \
-            while IFS= read -r file; do
-                rm -v "$file" 2>&1 || true
-            done | \
-            tee -a "$LOG_FILE" || true
-    fi
-    if find "$GDRIVE_DIR" -maxdepth 1 -name 'messages-*.db' -print 2>/dev/null; then
-        find "$GDRIVE_DIR" -maxdepth 1 -name 'messages-*.db' -print 2>/dev/null | \
-            sort -r | \
-            tail -n +11 | \
-            while IFS= read -r file; do
-                rm -v "$file" 2>&1 || true
-            done | \
-            tee -a "$LOG_FILE" || true
-    fi
 fi
 
 # Summary

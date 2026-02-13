@@ -1426,16 +1426,8 @@ async function processTaskIpc(
           } else {
             result = { success: false, error: 'Text-only sources need title or tags to update' };
           }
-        } else if (data.content) {
-          // Create new entry from content (no URL, no sourceId)
-          result = await updateContent(data.content as string, {
-            groupFolder: targetGroup,
-            url: data.url as string,
-            title: data.title as string,
-            tags: data.tags as string[],
-          });
         } else {
-          logger.warn({ data }, 'Invalid kb_update request - missing url, source_id, or content');
+          logger.warn({ data }, 'Invalid kb_update request - missing url or source_id');
           break;
         }
 
